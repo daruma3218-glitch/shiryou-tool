@@ -252,8 +252,10 @@ class MaterialPipeline:
         print(f"{'='*60}")
 
     def _run_image_generation(self, mode: str, count: int, prompts_path: Path):
-        """画像生成スクリプトを実行"""
+        """画像生成スクリプトを実行（進捗をポーリング）"""
         output_subdir = self.output_dir / "images" / mode
+        progress_path = output_subdir / f"{mode}_progress.json"
+        mode_label = "図解" if mode == "diagrams" else "リアル画像"
         cmd = [
             sys.executable,
             str(self.project_root / "scripts" / "generate_images.py"),
@@ -264,14 +266,57 @@ class MaterialPipeline:
             "--project-root", str(self.project_root),
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            if result.stdout:
-                print(result.stdout)
-            if result.returncode != 0 and result.stderr:
-                print(f"  [WARN] 画像生成エラー: {result.stderr[:200]}")
+            # サブプロセスをバックグラウンドで起動
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+            # 進捗をポーリング
+            last_reported = 0
+            while process.poll() is None:
+                time.sleep(3)
+                if progress_path.exists():
+                    try:
+                        pg = json.loads(progress_path.read_text(encoding="utf-8"))
+                        current = pg.get("current", 0)
+                        total = pg.get("total", count)
+                        section = pg.get("section", "")
+                        status = pg.get("status", "")
+                        if current > last_reported:
+                            if status == "generating":
+                                self.log("image", f"{mode_label} {current}/{total} 生成中...", section)
+                            elif status == "ok":
+                                self.log("image", f"{mode_label} {current}/{total} 生成完了", section)
+                            elif status == "failed":
+                                self.log("image", f"{mode_label} {current}/{total} 生成失敗", section)
+                            last_reported = current
+                    except Exception:
+                        pass
+
+            stdout, stderr = process.communicate(timeout=60)
+            if stdout:
+                print(stdout)
+            if process.returncode != 0:
+                err_msg = stderr[:500] if stderr else "不明なエラー"
+                self.log("error", f"{mode_label}生成でエラー", err_msg)
+                print(f"  [WARN] 画像生成エラー (code={process.returncode}): {err_msg}")
+            else:
+                # 最終進捗を報告
+                if progress_path.exists():
+                    try:
+                        pg = json.loads(progress_path.read_text(encoding="utf-8"))
+                        current = pg.get("current", 0)
+                        total = pg.get("total", count)
+                        if current > last_reported:
+                            self.log("image", f"{mode_label} {current}/{total} 生成完了")
+                    except Exception:
+                        pass
+
         except subprocess.TimeoutExpired:
+            self.log("error", f"{mode_label}生成がタイムアウトしました")
             print(f"  [WARN] 画像生成タイムアウト (mode={mode})")
+            if process:
+                process.kill()
         except Exception as e:
+            self.log("error", f"{mode_label}生成に失敗", str(e))
             print(f"  [ERROR] 画像生成失敗: {e}")
 
     def _build_html(self):

@@ -47,6 +47,9 @@ def build_prompt(user_prompt: str, mode: str) -> str:
     return prefix + user_prompt
 
 
+IMAGE_MODEL = "gemini-3.1-flash-image-preview"
+
+
 def generate_single_image(
     client: genai.Client, prompt: str, output_path: Path, mode: str, max_retries: int = 3
 ) -> bool:
@@ -56,16 +59,27 @@ def generate_single_image(
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash-preview-image-generation",
+                model=IMAGE_MODEL,
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
+                    response_modalities=["TEXT", "IMAGE"],
                 ),
             )
 
-            if response.candidates:
+            # 新しいSDK形式: response.parts を直接使う
+            if hasattr(response, "parts") and response.parts:
+                for part in response.parts:
+                    if hasattr(part, "inline_data") and part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                        img_data = part.inline_data.data
+                        if isinstance(img_data, str):
+                            img_data = base64.b64decode(img_data)
+                        output_path.write_bytes(img_data)
+                        return True
+
+            # フォールバック: candidates形式
+            if hasattr(response, "candidates") and response.candidates:
                 for part in response.candidates[0].content.parts:
-                    if part.inline_data and part.inline_data.mime_type.startswith("image/"):
+                    if hasattr(part, "inline_data") and part.inline_data and part.inline_data.mime_type.startswith("image/"):
                         img_data = part.inline_data.data
                         if isinstance(img_data, str):
                             img_data = base64.b64decode(img_data)
@@ -73,19 +87,27 @@ def generate_single_image(
                         return True
 
             print(f"  [WARN] No image in response for: {prompt[:50]}...")
+            # レスポンスの内容をデバッグ出力
+            if hasattr(response, "parts") and response.parts:
+                for part in response.parts:
+                    if hasattr(part, "text") and part.text:
+                        print(f"  [DEBUG] Text response: {part.text[:200]}")
             return False
 
         except Exception as e:
             err_str = str(e)
+            print(f"  [ERROR] Attempt {attempt + 1}/{max_retries}: {err_str[:300]}")
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
                 wait_time = 30 * (attempt + 1)
-                print(f"  [RATE LIMIT] Waiting {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                print(f"  [RATE LIMIT] Waiting {wait_time}s...")
                 time.sleep(wait_time)
             elif "safety" in err_str.lower() or "block" in err_str.lower():
                 print(f"  [BLOCKED] Safety filter blocked: {prompt[:50]}...")
                 return False
+            elif "not found" in err_str.lower() or "404" in err_str:
+                print(f"  [MODEL ERROR] Model '{IMAGE_MODEL}' not available. Check model name.")
+                return False
             else:
-                print(f"  [ERROR] {err_str}")
                 if attempt == max_retries - 1:
                     return False
                 time.sleep(5)
@@ -144,6 +166,9 @@ def main():
     print(f"  出力先: {output_dir}")
     print(f"{'='*60}\n")
 
+    # 進捗ファイル（パイプラインがポーリングする）
+    progress_path = output_dir / f"{args.mode}_progress.json"
+
     for i, prompt_entry in enumerate(prompts):
         prompt_text = prompt_entry["prompt"]
         section = prompt_entry.get("section", "")
@@ -152,6 +177,10 @@ def main():
 
         print(f"[{i+1}/{len(prompts)}] {section}")
         print(f"  Prompt: {prompt_text[:80]}...")
+
+        # 進捗を書き込み
+        progress = {"current": i + 1, "total": len(prompts), "section": section, "status": "generating"}
+        progress_path.write_text(json.dumps(progress, ensure_ascii=False), encoding="utf-8")
 
         success = generate_single_image(client, prompt_text, output_path, args.mode)
 
@@ -165,6 +194,10 @@ def main():
             "filename": filename,
             "success": success,
         })
+
+        # 進捗を更新
+        progress["status"] = "ok" if success else "failed"
+        progress_path.write_text(json.dumps(progress, ensure_ascii=False), encoding="utf-8")
 
         # レート制限対策
         if i < len(prompts) - 1:
