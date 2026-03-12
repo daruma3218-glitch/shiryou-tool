@@ -19,6 +19,7 @@ INPUT_DIR = PROJECT_ROOT / "input"
 
 # 進行中のジョブを管理
 active_jobs = {}
+job_logs = {}  # job_id -> list of log entries
 
 
 def load_env():
@@ -35,6 +36,23 @@ def load_env():
 
 
 load_env()
+
+
+def add_log(job_id: str, category: str, message: str, detail: str = ""):
+    """アクティビティログを追加"""
+    if job_id not in job_logs:
+        job_logs[job_id] = []
+    entry = {
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "category": category,
+        "message": message,
+        "detail": detail,
+    }
+    job_logs[job_id].append(entry)
+    # ファイルにも保存（ブラウザリロード対応）
+    logs_path = OUTPUT_DIR / job_id / "logs.json"
+    if logs_path.parent.exists():
+        logs_path.write_text(json.dumps(job_logs[job_id], ensure_ascii=False), encoding="utf-8")
 
 
 def update_progress(job_id: str, phase: int, message: str, percent: int, status: str = "running"):
@@ -62,11 +80,14 @@ def run_pipeline(job_id: str, manuscript_path: str):
             output_dir=str(OUTPUT_DIR / job_id),
             project_root=str(PROJECT_ROOT),
             progress_callback=lambda phase, msg, pct: update_progress(job_id, phase, msg, pct),
+            log_callback=lambda cat, msg, detail="": add_log(job_id, cat, msg, detail),
         )
         pipeline.run()
         update_progress(job_id, 4, "完了しました！", 100, "completed")
+        add_log(job_id, "complete", "全工程が完了しました")
     except Exception as e:
         update_progress(job_id, -1, f"エラー: {str(e)}", 0, "error")
+        add_log(job_id, "error", f"エラー: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -164,6 +185,27 @@ def api_progress(job_id):
     if progress_path.exists():
         return jsonify(json.loads(progress_path.read_text(encoding="utf-8")))
     return jsonify({"phase": -1, "message": "ジョブが見つかりません", "percent": 0, "status": "not_found"})
+
+
+@app.route("/api/logs/<job_id>")
+def api_logs(job_id):
+    """アクティビティログAPIエンドポイント"""
+    since = int(request.args.get("since", 0))
+    # メモリから取得
+    if job_id in job_logs:
+        logs = job_logs[job_id]
+    else:
+        # ファイルから読み込み
+        logs_path = OUTPUT_DIR / job_id / "logs.json"
+        if logs_path.exists():
+            try:
+                logs = json.loads(logs_path.read_text(encoding="utf-8"))
+            except Exception:
+                logs = []
+        else:
+            logs = []
+    # sinceインデックス以降のログのみ返す
+    return jsonify({"logs": logs[since:], "total": len(logs)})
 
 
 @app.route("/results/<job_id>/")

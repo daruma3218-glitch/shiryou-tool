@@ -18,6 +18,11 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .pulse-ring { animation: pulseRing 2s ease-out infinite; }
     @keyframes pulseRing { 0% { transform: scale(0.9); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
+    .log-enter { animation: logSlideIn 0.3s ease-out; }
+    @keyframes logSlideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    #activityFeed { max-height: 320px; overflow-y: auto; scrollbar-width: thin; }
+    #activityFeed::-webkit-scrollbar { width: 4px; }
+    #activityFeed::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -120,6 +125,18 @@
       </div>
     </div>
 
+    <!-- Activity Feed -->
+    <div class="mt-6 bg-white rounded-2xl border border-gray-200 overflow-hidden" id="activitySection">
+      <div class="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/></svg>
+        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">アクティビティ</span>
+        <span id="logCount" class="ml-auto text-xs text-gray-400">0件</span>
+      </div>
+      <div id="activityFeed" class="p-3 space-y-1">
+        <div id="emptyLogs" class="text-center py-6 text-xs text-gray-400">待機中...</div>
+      </div>
+    </div>
+
     <!-- Result -->
     <div id="resultCard" class="hidden mt-8 bg-white rounded-2xl border-2 border-emerald-200 p-8 text-center">
       <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-emerald-100 flex items-center justify-center">
@@ -150,6 +167,53 @@
   <script>
     const jobId = '{{ job_id }}';
     const checkmark = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>';
+    let logOffset = 0;
+    let isFinished = false;
+
+    const categoryConfig = {
+      setup:   { icon: '&#9881;',  color: 'text-gray-500',   bg: 'bg-gray-50' },
+      ai:      { icon: '&#9733;',  color: 'text-indigo-600', bg: 'bg-indigo-50' },
+      twitter: { icon: '&#120143;', color: 'text-sky-600',    bg: 'bg-sky-50' },
+      youtube: { icon: '&#9654;',  color: 'text-red-600',    bg: 'bg-red-50' },
+      web:     { icon: '&#127760;', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+      image:   { icon: '&#128247;', color: 'text-violet-600', bg: 'bg-violet-50' },
+      system:  { icon: '&#8505;',  color: 'text-gray-600',   bg: 'bg-gray-50' },
+      error:   { icon: '&#9888;',  color: 'text-red-600',    bg: 'bg-red-50' },
+      complete:{ icon: '&#10004;', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    };
+
+    function renderLog(entry) {
+      const cfg = categoryConfig[entry.category] || categoryConfig.system;
+      const detail = entry.detail ? `<span class="text-gray-400 ml-1">${entry.detail}</span>` : '';
+      return `<div class="log-enter flex items-start gap-2 px-2 py-1.5 rounded-lg ${cfg.bg}">
+        <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center text-xs ${cfg.color}">${cfg.icon}</span>
+        <div class="min-w-0 flex-1">
+          <span class="text-xs font-medium text-gray-800">${entry.message}</span>${detail}
+        </div>
+        <span class="flex-shrink-0 text-[10px] text-gray-400 tabular-nums mt-0.5">${entry.time}</span>
+      </div>`;
+    }
+
+    async function fetchLogs() {
+      try {
+        const res = await fetch(`/api/logs/${jobId}?since=${logOffset}`);
+        const data = await res.json();
+        if (data.logs && data.logs.length > 0) {
+          const feed = document.getElementById('activityFeed');
+          const empty = document.getElementById('emptyLogs');
+          if (empty) empty.remove();
+
+          data.logs.forEach(entry => {
+            feed.insertAdjacentHTML('beforeend', renderLog(entry));
+          });
+          logOffset = data.total;
+          document.getElementById('logCount').textContent = data.total + '件';
+          // Auto-scroll to bottom
+          feed.scrollTop = feed.scrollHeight;
+        }
+      } catch (e) {}
+      if (!isFinished) setTimeout(fetchLogs, 1500);
+    }
 
     async function checkProgress() {
       try {
@@ -180,13 +244,13 @@
         }
 
         if (data.status === 'completed') {
+          isFinished = true;
           document.getElementById('statusTitle').textContent = '完成しました';
           document.getElementById('spinnerIcon').classList.remove('spin');
           document.getElementById('pulseRing').classList.remove('pulse-ring');
           document.getElementById('resultCard').classList.remove('hidden');
           document.getElementById('resultLink').href = `/results/${jobId}/`;
           document.title = '完了 - 資料作成ツール';
-          // Mark all phases as done
           for (let i = 0; i <= 3; i++) {
             const el = document.getElementById(`phase-${i}`);
             const icon = document.getElementById(`icon-${i}`);
@@ -194,16 +258,19 @@
             icon.className = 'w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs font-bold flex-shrink-0';
             icon.innerHTML = checkmark;
           }
+          fetchLogs(); // Final log fetch
           return;
         }
 
         if (data.status === 'error') {
+          isFinished = true;
           document.getElementById('statusTitle').textContent = 'エラーが発生しました';
           document.getElementById('spinnerIcon').classList.remove('spin');
           document.getElementById('pulseRing').classList.remove('pulse-ring');
           document.getElementById('errorCard').classList.remove('hidden');
           document.getElementById('errorText').textContent = data.message;
           document.title = 'エラー - 資料作成ツール';
+          fetchLogs(); // Final log fetch
           return;
         }
 
@@ -214,6 +281,7 @@
     }
 
     checkProgress();
+    fetchLogs();
   </script>
 </body>
 </html>
