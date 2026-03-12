@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja" x-data="{ darkMode: false, activeSection: 'overview', sidebarOpen: true, lightboxImage: null }" :class="{ 'dark': darkMode }">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} - 動画素材集</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#2563EB', 600: '#2451c5', 700: '#1d4ed8', 900: '#1e3a5f' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .sidebar-link.active { background: #2563EB; color: white; }
+    .dark .sidebar-link.active { background: #1d4ed8; }
+    @media print {
+      .no-print { display: none !important; }
+      .print-break { page-break-before: always; }
+    }
+    .image-grid img { cursor: pointer; transition: transform 0.2s; }
+    .image-grid img:hover { transform: scale(1.02); }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
+
+  <!-- Lightbox -->
+  <div x-show="lightboxImage" x-cloak @click="lightboxImage = null"
+       class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer">
+    <img :src="lightboxImage" class="max-w-full max-h-[90vh] rounded-lg shadow-2xl" @click.stop>
+    <button @click="lightboxImage = null" class="absolute top-4 right-4 text-white text-3xl">&times;</button>
+  </div>
+
+  <!-- Header -->
+  <header class="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 no-print">
+    <div class="flex items-center justify-between px-4 h-14">
+      <div class="flex items-center gap-3">
+        <button @click="sidebarOpen = !sidebarOpen" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <h1 class="text-lg font-bold text-brand-500">{{ title }}</h1>
+        <span class="text-xs text-gray-400">動画素材集</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-400">{{ generated_date }}</span>
+        <button @click="darkMode = !darkMode" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+          <svg x-show="!darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          <svg x-show="darkMode" x-cloak class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </button>
+        <button @click="window.print()" class="px-3 py-1.5 text-sm bg-brand-500 text-white rounded-lg hover:bg-brand-600">
+          印刷
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex pt-14">
+    <!-- Sidebar -->
+    <aside x-show="sidebarOpen" x-cloak
+           class="fixed left-0 top-14 bottom-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto no-print z-30">
+      <nav class="p-3 space-y-1">
+        <a href="#overview" @click="activeSection='overview'"
+           :class="activeSection === 'overview' ? 'active' : ''"
+           class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+          概要 & タイムライン
+        </a>
+
+        {% for section in sections %}
+        <div class="mt-3">
+          <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">{{ section.title }}</div>
+          <a href="#section-{{ section.id }}" @click="activeSection='section-{{ section.id }}'"
+             :class="activeSection === 'section-{{ section.id }}' ? 'active' : ''"
+             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            {{ section.title }}
+          </a>
+        </div>
+        {% endfor %}
+
+        <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">素材カテゴリ</div>
+          <a href="#twitter" @click="activeSection='twitter'"
+             :class="activeSection === 'twitter' ? 'active' : ''"
+             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            X/Twitter ({{ twitter_count }}件)
+          </a>
+          <a href="#youtube" @click="activeSection='youtube'"
+             :class="activeSection === 'youtube' ? 'active' : ''"
+             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            YouTube ({{ youtube_count }}件)
+          </a>
+          <a href="#webdata" @click="activeSection='webdata'"
+             :class="activeSection === 'webdata' ? 'active' : ''"
+             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            Web素材 ({{ webdata_count }}件)
+          </a>
+          <a href="#diagrams" @click="activeSection='diagrams'"
+             :class="activeSection === 'diagrams' ? 'active' : ''"
+             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            図解 ({{ diagrams_count }}枚)
+          </a>
+          <a href="#realistic" @click="activeSection='realistic'"
+             :class="activeSection === 'realistic' ? 'active' : ''"
+             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            リアル画像 ({{ realistic_count }}枚)
+          </a>
+          <a href="#direction-notes" @click="activeSection='direction-notes'"
+             :class="activeSection === 'direction-notes' ? 'active' : ''"
+             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            演出メモ
+          </a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main :class="sidebarOpen ? 'ml-64' : 'ml-0'" class="flex-1 transition-all duration-300 p-6 max-w-6xl">
+
+      <!-- Overview & Timeline -->
+      <section id="overview" class="mb-12 fade-in">
+        <h2 class="text-2xl font-bold mb-4 text-brand-500">概要 & タイムライン</h2>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <div class="prose dark:prose-invert max-w-none">
+            {{ overview_html }}
+          </div>
+        </div>
+
+        {% if timeline %}
+        <div class="mt-6">
+          <h3 class="text-lg font-semibold mb-3">タイムライン（30分動画想定）</h3>
+          <div class="space-y-2">
+            {% for item in timeline %}
+            <div class="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm border border-gray-200 dark:border-gray-700">
+              <span class="flex-shrink-0 w-20 text-sm font-mono font-bold text-brand-500">{{ item.time }}</span>
+              <div class="flex-1">
+                <div class="font-medium">{{ item.section }}</div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">{{ item.description }}</div>
+              </div>
+              <span class="flex-shrink-0 text-xs bg-brand-50 dark:bg-brand-900 text-brand-500 px-2 py-1 rounded-full">
+                {{ item.duration }}
+              </span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </section>
+
+      <!-- Section-by-Section Material Mapping -->
+      {% for section in sections %}
+      <section id="section-{{ section.id }}" class="mb-12 fade-in print-break">
+        <h2 class="text-2xl font-bold mb-4">{{ section.title }}</h2>
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+          <!-- Manuscript excerpt -->
+          <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">原稿テキスト</div>
+            <p class="text-gray-700 dark:text-gray-300">{{ section.manuscript_text }}</p>
+          </div>
+          <!-- Assigned materials -->
+          {% if section.materials %}
+          <div class="p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400 mb-2">使用素材</div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {% for mat in section.materials %}
+              <div class="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                {% if mat.thumbnail %}
+                <img src="{{ mat.thumbnail }}" @click="lightboxImage='{{ mat.thumbnail }}'"
+                     class="w-20 h-14 object-cover rounded cursor-pointer flex-shrink-0">
+                {% endif %}
+                <div class="min-w-0">
+                  <span class="inline-block px-2 py-0.5 text-xs rounded-full mb-1
+                    {% if mat.type == 'twitter' %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300
+                    {% elif mat.type == 'youtube' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300
+                    {% elif mat.type == 'web' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300
+                    {% elif mat.type == 'diagram' %}bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300
+                    {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300
+                    {% endif %}">{{ mat.type_label }}</span>
+                  <div class="text-sm font-medium truncate">{{ mat.title }}</div>
+                  {% if mat.note %}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ mat.note }}</div>{% endif %}
+                  {% if mat.url %}<a href="{{ mat.url }}" target="_blank" class="text-xs text-brand-500 hover:underline break-all">{{ mat.url }}</a>{% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+      {% endfor %}
+
+      <!-- Twitter Section -->
+      <section id="twitter" class="mb-12 fade-in print-break">
+        <h2 class="text-2xl font-bold mb-4">X/Twitter 関連投稿</h2>
+        <div class="space-y-3">
+          {% for post in twitter_posts %}
+          <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="font-semibold">{{ post.author }}</span>
+                {% if post.engagement %}<span class="ml-2 text-xs text-gray-400">{{ post.engagement }}</span>{% endif %}
+              </div>
+              <a href="{{ post.url }}" target="_blank" class="text-brand-500 hover:underline text-sm flex-shrink-0">元投稿</a>
+            </div>
+            <p class="mt-2 text-gray-700 dark:text-gray-300">{{ post.content }}</p>
+            {% if post.relevance %}<div class="mt-2 text-xs text-gray-400">関連: {{ post.relevance }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <!-- YouTube Section -->
+      <section id="youtube" class="mb-12 fade-in print-break">
+        <h2 class="text-2xl font-bold mb-4">YouTube 関連動画</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {% for video in youtube_videos %}
+          <div class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700">
+            {% if video.thumbnail %}
+            <img src="{{ video.thumbnail }}" alt="{{ video.title }}" class="w-full h-40 object-cover">
+            {% endif %}
+            <div class="p-4">
+              <h3 class="font-semibold text-sm">{{ video.title }}</h3>
+              <div class="text-xs text-gray-400 mt-1">{{ video.channel }} {{ video.views }}</div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">{{ video.description }}</p>
+              <a href="{{ video.url }}" target="_blank" class="inline-block mt-2 text-sm text-brand-500 hover:underline">動画を見る</a>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <!-- Web Data Section -->
+      <section id="webdata" class="mb-12 fade-in print-break">
+        <h2 class="text-2xl font-bold mb-4">Web画像・データ素材</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-100 dark:bg-gray-700">
+              <tr>
+                <th class="px-4 py-2 text-left">#</th>
+                <th class="px-4 py-2 text-left">説明</th>
+                <th class="px-4 py-2 text-left">対応セクション</th>
+                <th class="px-4 py-2 text-left">ソースURL</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+              {% for item in web_data %}
+              <tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
+                <td class="px-4 py-3">{{ item.index }}</td>
+                <td class="px-4 py-3">{{ item.description }}</td>
+                <td class="px-4 py-3 text-xs">{{ item.section }}</td>
+                <td class="px-4 py-3"><a href="{{ item.url }}" target="_blank" class="text-brand-500 hover:underline break-all text-xs">{{ item.url }}</a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Diagrams Gallery -->
+      <section id="diagrams" class="mb-12 fade-in print-break">
+        <h2 class="text-2xl font-bold mb-4">図解素材</h2>
+        <div class="image-grid grid grid-cols-1 md:grid-cols-2 gap-4">
+          {% for img in diagram_images %}
+          {% if img.success %}
+          <div class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700">
+            <img src="images/diagrams/{{ img.filename }}" alt="{{ img.section }}"
+                 @click="lightboxImage='images/diagrams/{{ img.filename }}'"
+                 class="w-full object-contain bg-gray-100 dark:bg-gray-700" style="max-height: 300px;">
+            <div class="p-3">
+              <div class="text-sm font-medium">図{{ img.index }}: {{ img.section }}</div>
+              <div class="text-xs text-gray-400 mt-1">{{ img.prompt }}</div>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </section>
+
+      <!-- Realistic Images Gallery -->
+      <section id="realistic" class="mb-12 fade-in print-break">
+        <h2 class="text-2xl font-bold mb-4">リアル画像素材</h2>
+        <div class="image-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {% for img in realistic_images %}
+          {% if img.success %}
+          <div class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700">
+            <img src="images/realistic/{{ img.filename }}" alt="{{ img.section }}"
+                 @click="lightboxImage='images/realistic/{{ img.filename }}'"
+                 class="w-full h-48 object-cover">
+            <div class="p-3">
+              <div class="text-sm font-medium">{{ img.section }}</div>
+              <div class="text-xs text-gray-400 mt-1">{{ img.prompt }}</div>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </section>
+
+      <!-- Direction Notes -->
+      <section id="direction-notes" class="mb-12 fade-in print-break">
+        <h2 class="text-2xl font-bold mb-4">演出メモ・編集者向け指示</h2>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <div class="prose dark:prose-invert max-w-none">
+            {{ direction_notes_html }}
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="text-center text-xs text-gray-400 py-8 border-t border-gray-200 dark:border-gray-700">
+        <p>この資料はAIエージェントにより自動生成されました</p>
+        <p class="mt-1">生成日時: {{ generated_date }}</p>
+      </footer>
+
+    </main>
+  </div>
+
+</body>
+</html>
