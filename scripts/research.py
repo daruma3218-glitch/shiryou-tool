@@ -24,7 +24,7 @@ def claude_research(client: anthropic.Anthropic, query: str, system: str, max_to
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=max_tokens,
                 system=system,
                 tools=[{
@@ -62,7 +62,7 @@ def claude_query(client: anthropic.Anthropic, query: str, system: str, max_token
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": query}],
