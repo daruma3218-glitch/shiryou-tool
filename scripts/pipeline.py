@@ -30,12 +30,14 @@ class MaterialPipeline:
         project_root: str,
         progress_callback: Optional[Callable] = None,
         log_callback: Optional[Callable] = None,
+        agent_callback: Optional[Callable] = None,
     ):
         self.manuscript_path = Path(manuscript_path)
         self.output_dir = Path(output_dir)
         self.project_root = Path(project_root)
         self.progress_callback = progress_callback or (lambda *a: None)
         self.log_callback = log_callback or (lambda *a, **kw: None)
+        self.agent_callback = agent_callback or (lambda *a, **kw: None)
 
     def report(self, phase: int, message: str, percent: int):
         """進捗を報告"""
@@ -46,6 +48,10 @@ class MaterialPipeline:
         """詳細ログを記録"""
         print(f"  [{category}] {message}" + (f" - {detail}" if detail else ""))
         self.log_callback(category, message, detail)
+
+    def agent(self, agent_id: str, status: str, message: str, count: int = 0, total: int = 0):
+        """エージェント状態を更新"""
+        self.agent_callback(agent_id, status, message, count, total)
 
     def run(self):
         """パイプライン全体を実行"""
@@ -67,6 +73,7 @@ class MaterialPipeline:
 
         self.report(0, "原稿を分析中...", 3)
         self.log("ai", "Claude AIで原稿を分析中...", "テーマ・キーワード・セクション抽出")
+        self.agent("analyze", "running", "原稿を分析中...")
         client = get_client()
         analysis = analyze_manuscript(client, manuscript_text)
 
@@ -75,12 +82,21 @@ class MaterialPipeline:
         sections = analysis.get("sections", [])
         summary = analysis.get("summary", manuscript_text[:200])
 
+        self.agent("analyze", "completed", f"「{title}」キーワード{len(keywords)}個, セクション{len(sections)}個")
         self.log("ai", f"原稿分析完了: 「{title}」", f"キーワード{len(keywords)}個, セクション{len(sections)}個")
         self.report(0, f"分析完了: {title} (キーワード{len(keywords)}個, セクション{len(sections)}個)", 5)
 
         # ===== Phase 1: 並行リサーチ =====
         self.report(1, "4つの並行エージェント起動中...", 8)
         self.log("system", "4つの並行エージェントを起動します")
+
+        # エージェント初期状態を設定
+        self.agent("twitter", "running", "X/Twitter投稿を検索中...")
+        self.agent("youtube", "running", "YouTube動画を検索中...")
+        self.agent("web", "running", "Web素材を収集中...")
+        self.agent("diagrams", "running", "図解プロンプトを作成中...")
+        self.agent("realistic", "waiting", "Phase 2で開始予定")
+        self.agent("direction", "waiting", "Phase 3で開始予定")
 
         twitter_results = []
         youtube_results = []
@@ -90,8 +106,10 @@ class MaterialPipeline:
         def task_twitter():
             self.report(1, "[Agent 1] X/Twitter投稿検索中...", 10)
             self.log("twitter", "X/Twitter投稿の検索を開始", f"キーワード: {', '.join(keywords[:3])}")
+            self.agent("twitter", "running", f"キーワード「{', '.join(keywords[:3])}」で検索中...")
             results = research_twitter(client, keywords, summary)
             save_json(self.output_dir / "research" / "twitter_results.json", {"results": results})
+            self.agent("twitter", "completed", f"{len(results)}件の投稿を収集", count=len(results))
             self.log("twitter", f"X/Twitter検索完了: {len(results)}件の投稿を収集")
             self.report(1, f"[Agent 1] X/Twitter: {len(results)}件収集完了", 25)
             return results
@@ -99,8 +117,10 @@ class MaterialPipeline:
         def task_youtube():
             self.report(1, "[Agent 2] YouTube動画検索中...", 12)
             self.log("youtube", "YouTube動画の検索を開始", f"キーワード: {', '.join(keywords[:3])}")
+            self.agent("youtube", "running", f"キーワード「{', '.join(keywords[:3])}」で検索中...")
             results = research_youtube(client, keywords, summary)
             save_json(self.output_dir / "research" / "youtube_results.json", {"results": results})
+            self.agent("youtube", "completed", f"{len(results)}件の動画を収集", count=len(results))
             self.log("youtube", f"YouTube検索完了: {len(results)}件の動画を収集")
             self.report(1, f"[Agent 2] YouTube: {len(results)}件収集完了", 25)
             return results
@@ -108,8 +128,10 @@ class MaterialPipeline:
         def task_webdata():
             self.report(1, "[Agent 3] Web画像・データ収集中...", 14)
             self.log("web", "Web画像・データの収集を開始", f"目標: 40件")
+            self.agent("web", "running", "画像・データ・統計を収集中...", total=40)
             results = research_web_data(client, keywords, summary, sections)
             save_json(self.output_dir / "web_images" / "web_images.json", {"results": results})
+            self.agent("web", "completed", f"{len(results)}件の素材を収集", count=len(results), total=40)
             self.log("web", f"Web素材収集完了: {len(results)}件", "画像URL・統計データ・引用を収集")
             self.report(1, f"[Agent 3] Web素材: {len(results)}件収集完了", 30)
             return results
@@ -117,17 +139,23 @@ class MaterialPipeline:
         def task_diagrams():
             self.report(1, "[Agent 4] 図解プロンプト作成中...", 16)
             self.log("image", "図解画像のプロンプト作成を開始", "Claudeでプロンプト生成中")
+            self.agent("diagrams", "running", "Claudeでプロンプトを作成中...")
             prompts = generate_image_prompts(client, manuscript_text, keywords, sections, "diagrams", 20)
             prompts_path = self.output_dir / "diagram_prompts.json"
             save_json(prompts_path, {"prompts": prompts})
             self.log("image", f"図解プロンプト{len(prompts)}件作成完了")
 
             if prompts:
+                self.agent("diagrams", "running", f"Geminiで{len(prompts)}枚生成中...", count=0, total=len(prompts))
                 self.report(1, f"[Agent 4] 図解画像{len(prompts)}枚生成中...", 20)
                 self.log("image", f"Geminiで図解画像{len(prompts)}枚の生成を開始", "カラーパレット: 青/白/ダークグレー")
                 self._run_image_generation("diagrams", 20, prompts_path)
                 self.log("image", "図解画像の生成処理が完了")
 
+            # 最終結果を確認
+            manifest = load_json(self.output_dir / "images" / "diagrams" / "diagrams_manifest.json")
+            ok_count = len([r for r in manifest.get("results", []) if r.get("success")])
+            self.agent("diagrams", "completed", f"{ok_count}枚の図解を生成", count=ok_count, total=len(prompts))
             return prompts
 
         # 並行実行
@@ -152,6 +180,8 @@ class MaterialPipeline:
                     elif name == "diagrams":
                         diagram_prompts = result
                 except Exception as e:
+                    agent_map = {"twitter": "twitter", "youtube": "youtube", "webdata": "web", "diagrams": "diagrams"}
+                    self.agent(agent_map.get(name, name), "error", str(e)[:100])
                     self.log("error", f"{name} タスクでエラー発生", str(e))
                     print(f"  [ERROR] {name} タスク失敗: {e}")
                     import traceback
@@ -163,6 +193,7 @@ class MaterialPipeline:
         # ===== Phase 2: 追加リアル画像生成 =====
         self.report(2, "追加画像プロンプト作成中...", 48)
         self.log("ai", "リアル画像のプロンプトを作成中...", "収集済み素材を分析して不足を補う画像を設計")
+        self.agent("realistic", "running", "プロンプトを作成中...")
 
         # 既存素材の概要をまとめる
         existing_summary = (
@@ -181,10 +212,16 @@ class MaterialPipeline:
         self.log("image", f"リアル画像プロンプト{len(realistic_prompts)}件作成完了")
 
         if realistic_prompts:
+            self.agent("realistic", "running", f"Geminiで{len(realistic_prompts)}枚生成中...", count=0, total=len(realistic_prompts))
             self.report(2, f"リアル画像{len(realistic_prompts)}枚生成中...", 52)
             self.log("image", f"Geminiでリアル画像{len(realistic_prompts)}枚の生成を開始", "フォトリアリスティック品質")
             self._run_image_generation("realistic", 30, realistic_prompts_path)
             self.log("image", "リアル画像の生成処理が完了")
+
+        # 最終結果を確認
+        r_manifest = load_json(self.output_dir / "images" / "realistic" / "realistic_manifest.json")
+        r_ok = len([r for r in r_manifest.get("results", []) if r.get("success")])
+        self.agent("realistic", "completed", f"{r_ok}枚のリアル画像を生成", count=r_ok, total=len(realistic_prompts))
 
         self.log("system", "Phase 2 完了")
         self.report(2, "Phase 2 完了: 追加画像生成終了", 70)
@@ -192,6 +229,7 @@ class MaterialPipeline:
         # ===== Phase 3: 演出エージェント =====
         self.report(3, "演出AIエージェント起動中...", 72)
         self.log("ai", "演出AIエージェントを起動", "全素材を統合して動画編集者向けの構成を設計")
+        self.agent("direction", "running", "全素材を読み込み中...")
 
         # マニフェスト読み込み
         diagram_manifest = load_json(self.output_dir / "images" / "diagrams" / "diagrams_manifest.json")
@@ -206,6 +244,7 @@ class MaterialPipeline:
                  f"Twitter {len(twitter_results)}件, YouTube {len(youtube_results)}件, "
                  f"Web {len(web_results)}件, 図解 {diagram_ok}枚, リアル画像 {realistic_ok}枚")
 
+        self.agent("direction", "running", "素材を統合・タイムラインを構成中...")
         self.report(3, "素材を統合・構成中...", 78)
         self.log("ai", "Claudeが素材を統合・構成中...", "タイムライン・演出メモ・セクション対応を作成")
 
@@ -226,6 +265,7 @@ class MaterialPipeline:
         )
 
         save_json(self.output_dir / "data.json", direction_data)
+        self.agent("direction", "running", "HTML資料を生成中...")
         self.log("ai", "演出データ(data.json)作成完了")
         self.report(3, "演出データ作成完了", 85)
 
@@ -234,6 +274,7 @@ class MaterialPipeline:
         self.log("system", "HTMLファイルを生成中...", "Tailwind CSS + Alpine.js")
         self._build_html()
         self.log("system", "HTML資料の生成が完了", "index.html")
+        self.agent("direction", "completed", "演出データ・HTML資料を作成完了")
 
         self.report(3, "Phase 3 完了: 統合完了", 95)
 
@@ -256,6 +297,7 @@ class MaterialPipeline:
         output_subdir = self.output_dir / "images" / mode
         progress_path = output_subdir / f"{mode}_progress.json"
         mode_label = "図解" if mode == "diagrams" else "リアル画像"
+        agent_id = mode  # "diagrams" or "realistic"
         cmd = [
             sys.executable,
             str(self.project_root / "scripts" / "generate_images.py"),
@@ -283,10 +325,13 @@ class MaterialPipeline:
                         if current > last_reported:
                             if status == "generating":
                                 self.log("image", f"{mode_label} {current}/{total} 生成中...", section)
+                                self.agent(agent_id, "running", f"{current}/{total}枚 生成中... ({section})", count=current, total=total)
                             elif status == "ok":
                                 self.log("image", f"{mode_label} {current}/{total} 生成完了", section)
+                                self.agent(agent_id, "running", f"{current}/{total}枚 完了", count=current, total=total)
                             elif status == "failed":
                                 self.log("image", f"{mode_label} {current}/{total} 生成失敗", section)
+                                self.agent(agent_id, "running", f"{current}/{total}枚 (一部失敗)", count=current, total=total)
                             last_reported = current
                     except Exception:
                         pass

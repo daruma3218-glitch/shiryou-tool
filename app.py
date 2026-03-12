@@ -20,6 +20,7 @@ INPUT_DIR = PROJECT_ROOT / "input"
 # 進行中のジョブを管理
 active_jobs = {}
 job_logs = {}  # job_id -> list of log entries
+job_agents = {}  # job_id -> dict of agent states
 
 
 def load_env():
@@ -36,6 +37,28 @@ def load_env():
 
 
 load_env()
+
+
+def update_agent(job_id: str, agent_id: str, status: str, message: str, count: int = 0, total: int = 0):
+    """エージェントの状態を更新"""
+    if job_id not in job_agents:
+        job_agents[job_id] = {}
+    now = datetime.now().strftime("%H:%M:%S")
+    if agent_id not in job_agents[job_id]:
+        job_agents[job_id][agent_id] = {"startedAt": "", "completedAt": ""}
+    agent = job_agents[job_id][agent_id]
+    agent["status"] = status
+    agent["message"] = message
+    agent["count"] = count
+    agent["total"] = total
+    if status == "running" and not agent.get("startedAt"):
+        agent["startedAt"] = now
+    if status in ("completed", "error"):
+        agent["completedAt"] = now
+    # ファイルにも保存
+    agents_path = OUTPUT_DIR / job_id / "agents.json"
+    if agents_path.parent.exists():
+        agents_path.write_text(json.dumps(job_agents[job_id], ensure_ascii=False), encoding="utf-8")
 
 
 def add_log(job_id: str, category: str, message: str, detail: str = ""):
@@ -81,6 +104,7 @@ def run_pipeline(job_id: str, manuscript_path: str):
             project_root=str(PROJECT_ROOT),
             progress_callback=lambda phase, msg, pct: update_progress(job_id, phase, msg, pct),
             log_callback=lambda cat, msg, detail="": add_log(job_id, cat, msg, detail),
+            agent_callback=lambda aid, status, msg, count=0, total=0: update_agent(job_id, aid, status, msg, count, total),
         )
         pipeline.run()
         update_progress(job_id, 4, "完了しました！", 100, "completed")
@@ -206,6 +230,20 @@ def api_logs(job_id):
             logs = []
     # sinceインデックス以降のログのみ返す
     return jsonify({"logs": logs[since:], "total": len(logs)})
+
+
+@app.route("/api/agents/<job_id>")
+def api_agents(job_id):
+    """エージェント状態APIエンドポイント"""
+    if job_id in job_agents:
+        return jsonify(job_agents[job_id])
+    agents_path = OUTPUT_DIR / job_id / "agents.json"
+    if agents_path.exists():
+        try:
+            return jsonify(json.loads(agents_path.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return jsonify({})
 
 
 @app.route("/results/<job_id>/")
