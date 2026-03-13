@@ -178,10 +178,18 @@
           <h2 class="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wider">作成済み資料</h2>
           <div class="space-y-2">
             {% for job in past_jobs %}
-            <a href="/results/{{ job.id }}/" class="block p-3 hover:bg-gray-50 rounded-lg transition border border-transparent hover:border-gray-200">
-              <div class="text-sm font-medium text-gray-900 truncate">{{ job.title }}</div>
-              <div class="text-[10px] text-gray-400 mt-0.5">{{ job.id }}</div>
-            </a>
+            <div class="flex items-center gap-2 p-3 hover:bg-gray-50 rounded-lg transition border border-transparent hover:border-gray-200">
+              <a href="/results/{{ job.id }}/" class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-gray-900 truncate">{{ job.title }}</div>
+                <div class="text-[10px] text-gray-400 mt-0.5">{{ job.id }}</div>
+              </a>
+              <a href="/download/{{ job.id }}" title="ZIPダウンロード"
+                 class="flex-shrink-0 w-8 h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+              </a>
+            </div>
             {% endfor %}
           </div>
         </div>
