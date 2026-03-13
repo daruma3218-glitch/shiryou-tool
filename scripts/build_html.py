@@ -227,8 +227,12 @@ def main():
     )
     template = env.get_template("index.html")
 
+    # job_idはoutput_dirのディレクトリ名
+    job_id = output_dir.name
+
     html = template.render(
         title=title,
+        job_id=job_id,
         generated_date=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
         overview_html=overview,
         sections=enriched_sections,

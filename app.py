@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """資料作成ツール - Flask Webアプリケーション"""
 
+import io
 import json
 import os
 import threading
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file, redirect, url_for
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB max
@@ -258,6 +260,53 @@ def serve_results(job_id, filename="index.html"):
     if not result_dir.exists():
         return "結果が見つかりません", 404
     return send_from_directory(str(result_dir), filename)
+
+
+@app.route("/download/<job_id>")
+def download_zip(job_id):
+    """生成した資料をZIPでダウンロード"""
+    result_dir = OUTPUT_DIR / job_id
+    if not result_dir.exists() or not (result_dir / "index.html").exists():
+        return "結果が見つかりません", 404
+
+    # タイトルを取得（ファイル名用）
+    title = job_id
+    data_path = result_dir / "data.json"
+    if data_path.exists():
+        try:
+            data = json.loads(data_path.read_text(encoding="utf-8"))
+            t = data.get("title", "")
+            if t:
+                # ファイル名に使えない文字を除去
+                title = "".join(c for c in t if c not in r'\/:*?"<>|').strip()[:50]
+        except Exception:
+            pass
+
+    # ZIPをメモリ上に作成
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in result_dir.rglob("*"):
+            if file_path.is_file():
+                # 不要なファイルをスキップ
+                name = file_path.name
+                if name in ("progress.json", "logs.json", "agents.json",
+                            "manuscript.txt", "diagram_prompts.json",
+                            "realistic_prompts.json", "data_backup.json"):
+                    continue
+                # _progress.json もスキップ
+                if name.endswith("_progress.json"):
+                    continue
+                # ZIP内のパスを設定
+                arcname = file_path.relative_to(result_dir)
+                zf.write(file_path, arcname)
+
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{title}.zip",
+    )
 
 
 INPUT_DIR.mkdir(exist_ok=True)
