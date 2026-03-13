@@ -79,22 +79,23 @@
         <a href="#overview" @click="activeSection='overview'"
            :class="activeSection === 'overview' ? 'active' : ''"
            class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-          概要 & タイムライン
+          概要
         </a>
 
-        {% for section in sections %}
         <div class="mt-3">
-          <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">{{ section.title }}</div>
+          <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">ストーリーボード</div>
+          {% for section in sections %}
           <a href="#section-{{ section.id }}" @click="activeSection='section-{{ section.id }}'"
              :class="activeSection === 'section-{{ section.id }}' ? 'active' : ''"
-             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-            {{ section.title }}
+             class="sidebar-link flex items-center gap-2 px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+            <span class="font-mono text-xs text-gray-400 w-12 flex-shrink-0">{{ section.time_start }}</span>
+            <span class="truncate">{{ section.title }}</span>
           </a>
+          {% endfor %}
         </div>
-        {% endfor %}
 
         <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">素材カテゴリ</div>
+          <div class="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">素材一覧</div>
           <a href="#youtube" @click="activeSection='youtube'"
              :class="activeSection === 'youtube' ? 'active' : ''"
              class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
@@ -115,11 +116,6 @@
              class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
             リアル画像 ({{ realistic_count }}枚)
           </a>
-          <a href="#direction-notes" @click="activeSection='direction-notes'"
-             :class="activeSection === 'direction-notes' ? 'active' : ''"
-             class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-            演出メモ
-          </a>
         </div>
       </nav>
     </aside>
@@ -127,78 +123,173 @@
     <!-- Main Content -->
     <main :class="sidebarOpen ? 'ml-64' : 'ml-0'" class="flex-1 transition-all duration-300 p-6 max-w-6xl">
 
-      <!-- Overview & Timeline -->
-      <section id="overview" class="mb-12 fade-in">
-        <h2 class="text-2xl font-bold mb-4 text-brand-500">概要 & タイムライン</h2>
+      <!-- Overview -->
+      <section id="overview" class="mb-10 fade-in">
+        <h2 class="text-2xl font-bold mb-4 text-brand-500">概要</h2>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div class="prose dark:prose-invert max-w-none">
             {{ overview_html }}
           </div>
-        </div>
-
-        {% if timeline %}
-        <div class="mt-6">
-          <h3 class="text-lg font-semibold mb-3">タイムライン（30分動画想定）</h3>
-          <div class="space-y-2">
-            {% for item in timeline %}
-            <div class="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm border border-gray-200 dark:border-gray-700">
-              <span class="flex-shrink-0 w-20 text-sm font-mono font-bold text-brand-500">{{ item.time }}</span>
-              <div class="flex-1">
-                <div class="font-medium">{{ item.section }}</div>
-                <div class="text-sm text-gray-500 dark:text-gray-400">{{ item.description }}</div>
-              </div>
-              <span class="flex-shrink-0 text-xs bg-brand-50 dark:bg-brand-900 text-brand-500 px-2 py-1 rounded-full">
-                {{ item.duration }}
-              </span>
-            </div>
-            {% endfor %}
+          <div class="mt-4 flex gap-4 text-sm text-gray-500 dark:text-gray-400">
+            <span>YouTube: {{ youtube_count }}件</span>
+            <span>Web素材: {{ webdata_count }}件</span>
+            <span>図解: {{ diagrams_count }}枚</span>
+            <span>リアル画像: {{ realistic_count }}枚</span>
           </div>
         </div>
-        {% endif %}
       </section>
 
-      <!-- Section-by-Section Material Mapping -->
+      <!-- ===== Storyboard: Section-by-Section ===== -->
       {% for section in sections %}
-      <section id="section-{{ section.id }}" class="mb-12 fade-in print-break">
-        <h2 class="text-2xl font-bold mb-4">{{ section.title }}</h2>
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-          <!-- Manuscript excerpt -->
-          <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-            <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">原稿テキスト</div>
-            <p class="text-gray-700 dark:text-gray-300">{{ section.manuscript_text }}</p>
+      <section id="section-{{ section.id }}" class="mb-8 fade-in print-break">
+        <!-- Section Header -->
+        <div class="flex items-center justify-between bg-gradient-to-r from-brand-500 to-brand-700 text-white rounded-t-xl px-6 py-3">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl font-bold opacity-60">{{ section.id }}</span>
+            <h2 class="text-lg font-bold">{{ section.title }}</h2>
           </div>
-          <!-- Assigned materials -->
-          {% if section.materials %}
-          <div class="p-4">
-            <div class="text-sm text-gray-500 dark:text-gray-400 mb-2">使用素材</div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="flex items-center gap-3 text-sm">
+            <span class="font-mono bg-white/20 px-2 py-0.5 rounded">{{ section.time_start }}</span>
+            <span class="opacity-80">{{ section.duration }}</span>
+          </div>
+        </div>
+
+        <!-- Two-Column Body -->
+        <div class="grid grid-cols-1 lg:grid-cols-5 bg-white dark:bg-gray-800 rounded-b-xl shadow-sm border border-t-0 border-gray-200 dark:border-gray-700">
+
+          <!-- Left: Direction Info (3/5) -->
+          <div class="lg:col-span-3 p-5 space-y-4 lg:border-r border-gray-200 dark:border-gray-700">
+
+            <!-- Narration Summary -->
+            {% if section.narration_summary %}
+            <div>
+              <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">ナレーション</div>
+              <p class="text-gray-700 dark:text-gray-300 leading-relaxed">{{ section.narration_summary }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Visual Direction -->
+            {% if section.visual_direction %}
+            <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+              <div class="flex items-center gap-1.5 mb-1">
+                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                <span class="text-xs font-semibold text-blue-600 dark:text-blue-400">映像指示</span>
+              </div>
+              <p class="text-sm text-blue-800 dark:text-blue-300">{{ section.visual_direction }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Direction Details Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+              {% if section.bgm %}
+              <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <div class="flex items-center gap-1.5 mb-1">
+                  <svg class="w-3.5 h-3.5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+                  </svg>
+                  <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">BGM</span>
+                </div>
+                <p class="text-xs text-gray-600 dark:text-gray-400">{{ section.bgm }}</p>
+              </div>
+              {% endif %}
+
+              {% if section.telop %}
+              <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <div class="flex items-center gap-1.5 mb-1">
+                  <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/>
+                  </svg>
+                  <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">テロップ</span>
+                </div>
+                <p class="text-xs text-gray-600 dark:text-gray-400">{{ section.telop }}</p>
+              </div>
+              {% endif %}
+
+              {% if section.cut_notes %}
+              <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <div class="flex items-center gap-1.5 mb-1">
+                  <svg class="w-3.5 h-3.5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                  </svg>
+                  <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">カット割り</span>
+                </div>
+                <p class="text-xs text-gray-600 dark:text-gray-400">{{ section.cut_notes }}</p>
+              </div>
+              {% endif %}
+
+              {% if section.transition %}
+              <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <div class="flex items-center gap-1.5 mb-1">
+                  <svg class="w-3.5 h-3.5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+                  </svg>
+                  <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">トランジション</span>
+                </div>
+                <p class="text-xs text-gray-600 dark:text-gray-400">{{ section.transition }}</p>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Right: Materials Panel (2/5) -->
+          <div class="lg:col-span-2 p-4 bg-gray-50/50 dark:bg-gray-800/50">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">使用素材</span>
+              {% if section.materials %}
+              <span class="text-xs bg-brand-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full">{{ section.materials|length }}件</span>
+              {% endif %}
+            </div>
+
+            {% if section.materials %}
+            <div class="space-y-2 max-h-[500px] overflow-y-auto">
               {% for mat in section.materials %}
-              <div class="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                {% if mat.thumbnail %}
-                <img src="{{ mat.thumbnail }}" @click="lightboxImage='{{ mat.thumbnail }}'"
-                     class="w-20 h-14 object-cover rounded cursor-pointer flex-shrink-0">
+              <div class="flex items-start gap-2 p-2 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:shadow-sm transition">
+                {% if mat.image_path %}
+                <img src="{{ mat.image_path }}"
+                     @click="lightboxImage='{{ mat.image_path }}'"
+                     class="w-20 h-14 object-cover rounded cursor-pointer flex-shrink-0 hover:opacity-80 transition">
+                {% elif mat.thumbnail %}
+                <img src="{{ mat.thumbnail }}"
+                     class="w-20 h-14 object-cover rounded flex-shrink-0">
+                {% else %}
+                <div class="w-20 h-14 rounded flex-shrink-0 flex items-center justify-center
+                  {% if mat.type == 'web' %}bg-green-100 dark:bg-green-900{% else %}bg-gray-100 dark:bg-gray-600{% endif %}">
+                  {% if mat.type == 'web' %}
+                  <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
+                  {% endif %}
+                </div>
                 {% endif %}
-                <div class="min-w-0">
-                  <span class="inline-block px-2 py-0.5 text-xs rounded-full mb-1
-                    {% if mat.type == 'youtube' %}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300
-                    {% elif mat.type == 'web' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300
-                    {% elif mat.type == 'diagram' %}bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300
-                    {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300
-                    {% endif %}">{{ mat.type_label }}</span>
-                  <div class="text-sm font-medium truncate">{{ mat.title }}</div>
-                  {% if mat.note %}<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ mat.note }}</div>{% endif %}
-                  {% if mat.url %}<a href="{{ mat.url }}" target="_blank" class="text-xs text-brand-500 hover:underline break-all">{{ mat.url }}</a>{% endif %}
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1 mb-0.5">
+                    <span class="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded
+                      {% if mat.type == 'youtube' %}bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300
+                      {% elif mat.type == 'web' %}bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300
+                      {% elif mat.type == 'diagram' %}bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300
+                      {% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300
+                      {% endif %}">{{ mat.type_label }}</span>
+                  </div>
+                  <div class="text-xs font-medium text-gray-800 dark:text-gray-200 line-clamp-2">{{ mat.title }}</div>
+                  {% if mat.url %}
+                  <a href="{{ mat.url }}" target="_blank" rel="noopener"
+                     class="text-[10px] text-brand-500 hover:underline mt-0.5 block truncate">{{ mat.url }}</a>
+                  {% endif %}
                 </div>
               </div>
               {% endfor %}
             </div>
+            {% else %}
+            <div class="text-center py-8 text-gray-400">
+              <p class="text-sm">素材なし</p>
+            </div>
+            {% endif %}
           </div>
-          {% endif %}
         </div>
       </section>
       {% endfor %}
 
-      <!-- YouTube Section -->
+      <!-- ===== YouTube Section ===== -->
       <section id="youtube" class="mb-12 fade-in print-break">
         <h2 class="text-2xl font-bold mb-4">YouTube 関連動画</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -218,7 +309,7 @@
         </div>
       </section>
 
-      <!-- Web Data Section -->
+      <!-- ===== Web Data Section ===== -->
       <section id="webdata" class="mb-12 fade-in print-break">
         <h2 class="text-2xl font-bold mb-4">Web画像・データ素材</h2>
         <div class="overflow-x-auto">
@@ -245,7 +336,7 @@
         </div>
       </section>
 
-      <!-- Diagrams Gallery -->
+      <!-- ===== Diagrams Gallery ===== -->
       <section id="diagrams" class="mb-12 fade-in print-break">
         <h2 class="text-2xl font-bold mb-4">図解素材</h2>
         <div class="image-grid grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -265,7 +356,7 @@
         </div>
       </section>
 
-      <!-- Realistic Images Gallery -->
+      <!-- ===== Realistic Images Gallery ===== -->
       <section id="realistic" class="mb-12 fade-in print-break">
         <h2 class="text-2xl font-bold mb-4">リアル画像素材</h2>
         <div class="image-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -282,16 +373,6 @@
           </div>
           {% endif %}
           {% endfor %}
-        </div>
-      </section>
-
-      <!-- Direction Notes -->
-      <section id="direction-notes" class="mb-12 fade-in print-break">
-        <h2 class="text-2xl font-bold mb-4">演出メモ・編集者向け指示</h2>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-          <div class="prose dark:prose-invert max-w-none">
-            {{ direction_notes_html }}
-          </div>
         </div>
       </section>
 

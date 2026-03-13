@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -24,6 +25,149 @@ def load_json(path: Path, default=None):
         except (json.JSONDecodeError, IOError) as e:
             print(f"  [WARN] JSON読み込みエラー ({path}): {e}")
     return default if default is not None else {}
+
+
+def _normalize(name: str) -> str:
+    """セクション名を正規化（マッチング用）"""
+    name = name.strip()
+    name = re.sub(r'[：:、,。.「」『』【】（）()\s]+', '', name)
+    return name.lower()
+
+
+def _section_match_score(section_title: str, material_section: str) -> float:
+    """セクション名のマッチングスコアを計算（0.0〜1.0）"""
+    norm_sec = _normalize(section_title)
+    norm_mat = _normalize(material_section)
+
+    if not norm_sec or not norm_mat:
+        return 0.0
+
+    # 完全一致
+    if norm_sec == norm_mat:
+        return 1.0
+
+    # 部分一致（一方が他方に含まれる）
+    if norm_sec in norm_mat or norm_mat in norm_sec:
+        return 0.8
+
+    # 文字の重なり度合い
+    sec_chars = set(norm_sec)
+    mat_chars = set(norm_mat)
+    if not sec_chars or not mat_chars:
+        return 0.0
+    overlap = len(sec_chars & mat_chars) / max(len(sec_chars), len(mat_chars))
+    return overlap * 0.6
+
+
+def _youtube_relevance(video: dict, section_title: str) -> float:
+    """YouTube動画とセクション名の関連度スコア"""
+    title = video.get("title", "")
+    desc = video.get("description", "")
+    video_text = _normalize(title + desc)
+    sec_norm = _normalize(section_title)
+
+    if not sec_norm or not video_text:
+        return 0.0
+
+    # セクション名の各文字がビデオテキストに含まれる割合
+    sec_chars = list(sec_norm)
+    match_count = sum(1 for c in sec_chars if c in video_text)
+    return match_count / max(len(sec_chars), 1)
+
+
+def map_materials_to_sections(
+    sections: list,
+    diagram_images: list,
+    realistic_images: list,
+    web_data: list,
+    youtube_videos: list,
+) -> list:
+    """各セクションに素材を自動マッピングして返す"""
+    enriched = []
+
+    for section in sections:
+        sec_title = section.get("title", "")
+        materials = []
+
+        # 図解画像をマッピング
+        for img in diagram_images:
+            if not img.get("success"):
+                continue
+            score = _section_match_score(sec_title, img.get("section", ""))
+            if score >= 0.4:
+                materials.append({
+                    "type": "diagram",
+                    "type_label": "図解",
+                    "title": f"図{img.get('index', '')}: {img.get('section', '')}",
+                    "image_path": f"images/diagrams/{img.get('filename', '')}",
+                    "thumbnail": "",
+                    "url": "",
+                    "description": img.get("prompt", "")[:80],
+                    "_score": score,
+                })
+
+        # リアル画像をマッピング
+        for img in realistic_images:
+            if not img.get("success"):
+                continue
+            score = _section_match_score(sec_title, img.get("section", ""))
+            if score >= 0.4:
+                materials.append({
+                    "type": "realistic",
+                    "type_label": "写真",
+                    "title": img.get("section", ""),
+                    "image_path": f"images/realistic/{img.get('filename', '')}",
+                    "thumbnail": "",
+                    "url": "",
+                    "description": img.get("prompt", "")[:80],
+                    "_score": score,
+                })
+
+        # Web素材をマッピング
+        for item in web_data:
+            score = _section_match_score(sec_title, item.get("section", ""))
+            if score >= 0.4:
+                materials.append({
+                    "type": "web",
+                    "type_label": "Web",
+                    "title": item.get("description", "")[:60],
+                    "image_path": "",
+                    "thumbnail": "",
+                    "url": item.get("url", ""),
+                    "description": item.get("description", ""),
+                    "_score": score,
+                })
+
+        # YouTube動画をマッピング（キーワードマッチ、上位3件まで）
+        yt_scored = []
+        for video in youtube_videos:
+            score = _youtube_relevance(video, sec_title)
+            if score >= 0.4:
+                yt_scored.append((score, video))
+        yt_scored.sort(key=lambda x: x[0], reverse=True)
+        for score, video in yt_scored[:3]:
+            if score >= 0.4:
+                materials.append({
+                    "type": "youtube",
+                    "type_label": "YouTube",
+                    "title": video.get("title", ""),
+                    "image_path": "",
+                    "thumbnail": video.get("thumbnail", ""),
+                    "url": video.get("url", ""),
+                    "description": video.get("channel", ""),
+                    "_score": score,
+                })
+
+        # スコア順にソート（高い順）、スコアフィールドを削除
+        materials.sort(key=lambda m: m.get("_score", 0), reverse=True)
+        for m in materials:
+            m.pop("_score", None)
+
+        enriched_section = dict(section)
+        enriched_section["materials"] = materials
+        enriched.append(enriched_section)
+
+    return enriched
 
 
 def main():
@@ -65,29 +209,33 @@ def main():
 
     # 演出データから抽出
     title = data.get("title", "動画素材集")
-    overview_html = data.get("overview_html", f"<p>{manuscript_text[:500]}...</p>")
-    timeline = data.get("timeline", [])
+    # 新旧フォーマット対応
+    overview = data.get("overview", data.get("overview_html", f"{manuscript_text[:500]}..."))
+    if not overview.strip().startswith("<"):
+        overview = f"<p>{overview}</p>"
     sections = data.get("sections", [])
-    direction_notes_html = data.get("direction_notes_html", "<p>演出メモはありません</p>")
+
+    # 素材を自動マッピング
+    enriched_sections = map_materials_to_sections(
+        sections, diagram_images, realistic_images, web_data, youtube_videos
+    )
 
     # テンプレートレンダリング
     env = Environment(
         loader=FileSystemLoader(str(template_dir)),
-        autoescape=False,  # HTMLを直接埋め込むため
+        autoescape=False,
     )
     template = env.get_template("index.html")
 
     html = template.render(
         title=title,
         generated_date=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
-        overview_html=overview_html,
-        timeline=timeline,
-        sections=sections,
+        overview_html=overview,
+        sections=enriched_sections,
         youtube_videos=youtube_videos,
         web_data=web_data,
         diagram_images=diagram_images,
         realistic_images=realistic_images,
-        direction_notes_html=direction_notes_html,
         youtube_count=len(youtube_videos),
         webdata_count=len(web_data),
         diagrams_count=len([i for i in diagram_images if i.get("success")]),
@@ -98,6 +246,7 @@ def main():
     html_path = output_dir / "index.html"
     html_path.write_text(html, encoding="utf-8")
 
+    total_materials = sum(len(s.get("materials", [])) for s in enriched_sections)
     print(f"\n{'='*60}")
     print(f"  HTML資料生成完了")
     print(f"  出力: {html_path}")
@@ -105,7 +254,7 @@ def main():
     print(f"  Web素材: {len(web_data)}件")
     print(f"  図解: {len([i for i in diagram_images if i.get('success')])}枚")
     print(f"  リアル画像: {len([i for i in realistic_images if i.get('success')])}枚")
-    print(f"  セクション: {len(sections)}個")
+    print(f"  セクション: {len(enriched_sections)}個 (素材マッピング: {total_materials}件)")
     print(f"{'='*60}")
 
     return str(html_path)

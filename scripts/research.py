@@ -415,86 +415,108 @@ def generate_direction_data(
     diagram_count: int,
     realistic_count: int,
 ) -> dict:
-    """演出エージェント: 原稿と収集素材を統合して動画構成データを生成"""
+    """演出エージェント: 原稿を分析して動画構成・演出プランを生成（プレーンテキストJSON）"""
     sections = analysis.get("sections", [])
     keywords = analysis.get("keywords", [])
     title = analysis.get("title", "動画素材集")
     summary = analysis.get("summary", "")
 
-    # 収集素材の概要を作成
-    materials_summary = f"YouTube動画: {len(youtube_results)}件\n"
-    for v in youtube_results[:5]:
-        materials_summary += f"  - {v.get('title', '')} ({v.get('url', '')})\n"
-    materials_summary += f"Web素材: {len(web_results)}件\n"
-    for w in web_results[:5]:
-        materials_summary += f"  - {w.get('description', '')} ({w.get('section', '')})\n"
-    materials_summary += f"図解画像: {diagram_count}枚\nリアル画像: {realistic_count}枚\n"
+    # セクション一覧をJSON化（Claude に正確なセクション名を使わせる）
+    sections_list = json.dumps(
+        [{"id": f"s{i+1}", "title": s} for i, s in enumerate(sections)],
+        ensure_ascii=False,
+    )
 
     system = (
         "あなたはプロの動画ディレクター・演出家です。"
-        "原稿と収集素材を分析して、動画制作のための構成・演出プランを作成してください。"
-        "結果はJSON形式のみで返してください。他のテキストは不要です。"
+        "原稿を分析して、動画制作の構成・演出プランを作成してください。"
+        "結果はJSON形式のみで返してください。マークダウンやコードブロックは不要です。"
+        "\n\n重要ルール:"
+        "\n- 全ての値はプレーンテキスト（HTMLタグ禁止）"
+        "\n- ダブルクォートの代わりに「」を使うこと"
+        "\n- sectionsのtitleは指定されたセクション名をそのまま使うこと"
     )
 
-    query = f"""以下の原稿と素材をもとに、30分動画の構成・演出プランをJSON形式で作成してください。
+    query = f"""以下の原稿から、30分動画の演出プランをJSON形式で作成してください。
 
-## 原稿:
+原稿（冒頭2000文字）:
 {manuscript_text[:2000]}
 
-## 分析: タイトル「{title}」/ キーワード: {', '.join(keywords[:8])} / セクション: {', '.join(sections[:8])}
+セクション構成（このtitleをそのまま使うこと）:
+{sections_list}
 
-## 素材: {materials_summary}
+素材数: YouTube {len(youtube_results)}件、Web素材 {len(web_results)}件、図解 {diagram_count}枚、リアル画像 {realistic_count}枚
 
-## JSON出力形式（この形式のみ返すこと。```jsonブロック不要）:
-{{"title":"キャッチーなタイトル","overview_html":"<p>概要300文字</p>","timeline":[{{"time":"00:00","section":"名前","description":"内容","duration":"X分"}}],"sections":[{{"id":"s1","title":"名前","manuscript_text":"要約100文字","materials":[{{"type":"youtube/diagram/web/realistic","type_label":"表示名","title":"素材名","url":"URL","thumbnail":"","note":"使い方"}}]}}],"direction_notes_html":"<h3>演出方針</h3><p>BGM・テロップ・カット割り指示</p>"}}
+以下のJSON形式で返してください（コードブロック不要、プレーンテキストのみ）:
+{{
+  "title": "キャッチーな動画タイトル",
+  "overview": "動画全体の概要（200-300文字、プレーンテキスト）",
+  "sections": [
+    {{
+      "id": "s1",
+      "title": "上記セクション名をそのまま使う",
+      "time_start": "00:00",
+      "duration": "X分",
+      "narration_summary": "このセクションのナレーション要約（100-200文字）",
+      "visual_direction": "映像で何を見せるか（具体的な画面構成の指示）",
+      "bgm": "BGMの雰囲気・テンポ・楽器の指示",
+      "telop": "テロップ・字幕の演出指示",
+      "cut_notes": "カット割り・構図・トランジションの指示",
+      "transition": "次セクションへの繋ぎ方"
+    }}
+  ]
+}}
 
 ルール:
-- timelineは5-8個のタイムポイント
-- sectionsは原稿の各セクション（3-6個）に素材をマッピング
-- YouTube動画は収集した実URLとタイトルを使う
-- direction_notes_htmlにはBGM・テロップ・カット割りの具体的指示を含める
-- materialsの各アイテムはnoteに使い方を書く"""
+- sectionsは上記セクション構成と同じ数だけ作る（各セクション1つずつ）
+- 合計30分になるよう各セクションのdurationを割り振る
+- visual_directionには「ここで図解を映す」「リアル画像を背景に」など具体的に書く
+- 全ての値はプレーンテキスト。HTMLタグは絶対に使わないこと"""
 
-    # レート制限対策: 前フェーズのAPI集中呼び出し後に少し待つ
+    # レート制限対策
     time.sleep(2)
 
     # 最大3回試行
     for attempt in range(3):
         print(f"  [演出] 試行 {attempt+1}/3 開始...", flush=True)
-        result = claude_query(client, query, system, max_tokens=16000)
+        result = claude_query(client, query, system, max_tokens=8000)
         if not result:
             print(f"  [WARN] 演出データ生成: 空の応答 (attempt {attempt+1})", flush=True)
             time.sleep(5)
             continue
 
-        print(f"  [演出] 応答取得: {len(result)}文字, 先頭100: {result[:100]}", flush=True)
+        print(f"  [演出] 応答取得: {len(result)}文字", flush=True)
 
         data = parse_json_object(result)
-        if data:
-            has_sections = bool(data.get("sections"))
-            has_timeline = bool(data.get("timeline"))
-            print(f"  [演出] パース成功: keys={list(data.keys())}, sections={len(data.get('sections', []))}, timeline={len(data.get('timeline', []))}", flush=True)
+        if data and data.get("sections"):
+            print(f"  [演出] パース成功: sections={len(data['sections'])}", flush=True)
+            return data
 
-            if has_sections:
-                return data
-
-            # sectionsがないがtitleやoverviewがある場合、部分的成功
-            if data.get("title") and data.get("overview_html"):
-                print(f"  [WARN] 演出データ: sectionsが空だがtitle/overviewあり。もう1回試行...", flush=True)
-        else:
-            print(f"  [WARN] 演出データ生成: JSONパース失敗 (attempt {attempt+1}), len={len(result)}", flush=True)
-            print(f"  [WARN] 応答末尾200文字: {result[-200:]}", flush=True)
-
+        print(f"  [WARN] 演出データ: パース失敗またはsections空 (attempt {attempt+1})", flush=True)
         time.sleep(5)
 
-    # フォールバック: 最低限のデータを生成
+    # フォールバック: セクション構造だけでも生成
     print("  [WARN] 演出データ生成: フォールバックを使用", flush=True)
+    total_minutes = 30
+    per_section = total_minutes // max(len(sections), 1)
+    fallback_sections = []
+    for i, s in enumerate(sections):
+        fallback_sections.append({
+            "id": f"s{i+1}",
+            "title": s,
+            "time_start": f"{i * per_section:02d}:00",
+            "duration": f"{per_section}分",
+            "narration_summary": "",
+            "visual_direction": "",
+            "bgm": "",
+            "telop": "",
+            "cut_notes": "",
+            "transition": "",
+        })
     return {
         "title": title,
-        "overview_html": f"<p>{summary}</p>" if summary else f"<p>{manuscript_text[:500]}...</p>",
-        "timeline": [],
-        "sections": [],
-        "direction_notes_html": "<p>演出データの自動生成に失敗しました。手動で構成してください。</p>",
+        "overview": summary or manuscript_text[:300],
+        "sections": fallback_sections,
     }
 
 
@@ -524,6 +546,52 @@ def parse_json_array(text: str) -> list:
     return []
 
 
+def _repair_json_string(text: str) -> str:
+    """JSON文字列内のエスケープされていないダブルクォートを修復"""
+    result = []
+    i = 0
+    in_string = False
+    string_start = -1
+
+    while i < len(text):
+        c = text[i]
+
+        if not in_string:
+            result.append(c)
+            if c == '"':
+                in_string = True
+                string_start = i
+        else:
+            if c == '\\':
+                # エスケープシーケンス - 次の文字もそのまま追加
+                result.append(c)
+                i += 1
+                if i < len(text):
+                    result.append(text[i])
+            elif c == '"':
+                # この " が文字列の終端かチェック
+                # 次の文字が , : ] } 空白 のいずれかなら終端
+                j = i + 1
+                while j < len(text) and text[j] in ' \t\n\r':
+                    j += 1
+                if j >= len(text) or text[j] in ',:]}\n':
+                    # 文字列の終端
+                    result.append(c)
+                    in_string = False
+                else:
+                    # 文字列内のエスケープされていないクォート → エスケープする
+                    result.append('\\"')
+            elif c == '\n':
+                # 文字列内の改行をエスケープ
+                result.append('\\n')
+            else:
+                result.append(c)
+
+        i += 1
+
+    return ''.join(result)
+
+
 def parse_json_object(text: str) -> dict:
     """テキストからJSONオブジェクトを抽出（堅牢版）"""
     text = text.strip()
@@ -541,7 +609,7 @@ def parse_json_object(text: str) -> dict:
         elif len(parts) >= 2:
             text = parts[1].strip()
 
-    # 方法1: 最初の { から最後の } まで
+    # 方法1: 最初の { から最後の } まで（そのまま）
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
@@ -550,42 +618,30 @@ def parse_json_object(text: str) -> dict:
         except json.JSONDecodeError as e:
             print(f"  [JSON PARSE] Method 1 failed: {e}", flush=True)
 
-    # 方法2: ブレースのバランスを追跡して正しい終端を見つける
-    if start != -1:
-        depth = 0
-        in_string = False
-        escape_next = False
-        for i in range(start, len(text)):
-            c = text[i]
-            if escape_next:
-                escape_next = False
-                continue
-            if c == '\\':
-                escape_next = True
-                continue
-            if c == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if c == '{':
-                depth += 1
-            elif c == '}':
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(text[start:i + 1])
-                    except json.JSONDecodeError as e:
-                        print(f"  [JSON PARSE] Method 2 failed at pos {i}: {e}", flush=True)
-                    break
+    # 方法2: JSON文字列のダブルクォートを修復してパース
+    if start != -1 and end != -1 and end > start:
+        try:
+            repaired = _repair_json_string(text[start:end + 1])
+            result = json.loads(repaired)
+            print(f"  [JSON PARSE] Method 2 (repair) succeeded", flush=True)
+            return result
+        except json.JSONDecodeError as e:
+            print(f"  [JSON PARSE] Method 2 (repair) failed: {e}", flush=True)
 
     # 方法3: 切り詰められたJSONの修復を試みる
     if start != -1:
         json_text = text[start:]
-        # 末尾に閉じブレースを追加して修復を試みる
-        for extra in ['"}]}', '"}],"direction_notes_html":"<p>自動生成</p>"}', '"]}}', '"}', '}']:
+        for extra in ['"}]}', '"]}}', '"}', '}']:
             try:
                 return json.loads(json_text + extra)
+            except json.JSONDecodeError:
+                pass
+            # 修復も試す
+            try:
+                repaired = _repair_json_string(json_text + extra)
+                result = json.loads(repaired)
+                print(f"  [JSON PARSE] Method 3 (repair+extend) succeeded", flush=True)
+                return result
             except json.JSONDecodeError:
                 continue
 
