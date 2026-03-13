@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """資料作成ツール - Flask Webアプリケーション"""
 
+import functools
 import io
 import json
 import os
+import secrets
 import threading
 import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, send_file, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file, redirect, url_for, session
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB max
@@ -39,6 +41,52 @@ def load_env():
 
 
 load_env()
+
+# --- 認証設定 ---
+app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+
+def login_required(f):
+    """パスワード認証が必要なルートに適用するデコレータ"""
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        # APP_PASSWORD 未設定なら認証なしで通過
+        if not APP_PASSWORD:
+            return f(*args, **kwargs)
+        if not session.get("authenticated"):
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """ログインページ"""
+    # パスワード未設定なら直接トップへ
+    if not APP_PASSWORD:
+        return redirect(url_for("index"))
+    # 認証済みなら直接トップへ
+    if session.get("authenticated"):
+        return redirect(url_for("index"))
+
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if password == APP_PASSWORD:
+            session["authenticated"] = True
+            return redirect(url_for("index"))
+        else:
+            error = "パスワードが正しくありません"
+
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    """ログアウト"""
+    session.clear()
+    return redirect(url_for("login"))
 
 
 def update_agent(job_id: str, agent_id: str, status: str, message: str, count: int = 0, total: int = 0):
@@ -119,6 +167,7 @@ def run_pipeline(job_id: str, manuscript_path: str):
 
 
 @app.route("/")
+@login_required
 def index():
     """アップロードページ"""
     # 過去のジョブ一覧を取得
@@ -157,6 +206,7 @@ def index():
 
 
 @app.route("/start", methods=["POST"])
+@login_required
 def start_job():
     """ジョブを開始"""
     # APIキー確認
@@ -201,12 +251,14 @@ def start_job():
 
 
 @app.route("/progress/<job_id>")
+@login_required
 def progress_page(job_id):
     """進捗ページ"""
     return render_template("progress.html", job_id=job_id)
 
 
 @app.route("/api/progress/<job_id>")
+@login_required
 def api_progress(job_id):
     """進捗APIエンドポイント"""
     if job_id in active_jobs:
@@ -218,6 +270,7 @@ def api_progress(job_id):
 
 
 @app.route("/api/logs/<job_id>")
+@login_required
 def api_logs(job_id):
     """アクティビティログAPIエンドポイント"""
     since = int(request.args.get("since", 0))
@@ -239,6 +292,7 @@ def api_logs(job_id):
 
 
 @app.route("/api/agents/<job_id>")
+@login_required
 def api_agents(job_id):
     """エージェント状態APIエンドポイント"""
     if job_id in job_agents:
@@ -254,6 +308,7 @@ def api_agents(job_id):
 
 @app.route("/results/<job_id>/")
 @app.route("/results/<job_id>/<path:filename>")
+@login_required
 def serve_results(job_id, filename="index.html"):
     """結果ファイルを配信"""
     result_dir = OUTPUT_DIR / job_id
@@ -263,6 +318,7 @@ def serve_results(job_id, filename="index.html"):
 
 
 @app.route("/download/<job_id>")
+@login_required
 def download_zip(job_id):
     """生成した資料をZIPでダウンロード"""
     result_dir = OUTPUT_DIR / job_id
