@@ -455,20 +455,37 @@ def generate_direction_data(
 - direction_notes_htmlにはBGM・テロップ・カット割りの具体的指示を含める
 - materialsの各アイテムはnoteに使い方を書く"""
 
-    # 最大2回試行
-    for attempt in range(2):
+    # レート制限対策: 前フェーズのAPI集中呼び出し後に少し待つ
+    time.sleep(2)
+
+    # 最大3回試行
+    for attempt in range(3):
+        print(f"  [演出] 試行 {attempt+1}/3 開始...", flush=True)
         result = claude_query(client, query, system, max_tokens=16000)
         if not result:
             print(f"  [WARN] 演出データ生成: 空の応答 (attempt {attempt+1})", flush=True)
-            time.sleep(3)
+            time.sleep(5)
             continue
 
-        data = parse_json_object(result)
-        if data and data.get("sections"):
-            return data
+        print(f"  [演出] 応答取得: {len(result)}文字, 先頭100: {result[:100]}", flush=True)
 
-        print(f"  [WARN] 演出データ生成: JSONパース失敗 (attempt {attempt+1}), len={len(result)}", flush=True)
-        time.sleep(3)
+        data = parse_json_object(result)
+        if data:
+            has_sections = bool(data.get("sections"))
+            has_timeline = bool(data.get("timeline"))
+            print(f"  [演出] パース成功: keys={list(data.keys())}, sections={len(data.get('sections', []))}, timeline={len(data.get('timeline', []))}", flush=True)
+
+            if has_sections:
+                return data
+
+            # sectionsがないがtitleやoverviewがある場合、部分的成功
+            if data.get("title") and data.get("overview_html"):
+                print(f"  [WARN] 演出データ: sectionsが空だがtitle/overviewあり。もう1回試行...", flush=True)
+        else:
+            print(f"  [WARN] 演出データ生成: JSONパース失敗 (attempt {attempt+1}), len={len(result)}", flush=True)
+            print(f"  [WARN] 応答末尾200文字: {result[-200:]}", flush=True)
+
+        time.sleep(5)
 
     # フォールバック: 最低限のデータを生成
     print("  [WARN] 演出データ生成: フォールバックを使用", flush=True)
@@ -485,35 +502,92 @@ def parse_json_array(text: str) -> list:
     """テキストからJSON配列を抽出"""
     text = text.strip()
     if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
+        text = text.split("```json", 1)[1]
+        if "```" in text:
+            text = text.split("```", 1)[0]
+        text = text.strip()
     elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
+        parts = text.split("```")
+        if len(parts) >= 3:
+            text = parts[1].strip()
+        elif len(parts) >= 2:
+            text = parts[1].strip()
 
     start = text.find("[")
     end = text.rfind("]")
     if start != -1 and end != -1:
         try:
             return json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            print(f"  [JSON PARSE ARRAY] Failed: {e}", flush=True)
 
     return []
 
 
 def parse_json_object(text: str) -> dict:
-    """テキストからJSONオブジェクトを抽出"""
+    """テキストからJSONオブジェクトを抽出（堅牢版）"""
     text = text.strip()
-    if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
-    elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
 
+    # ```json ブロックの除去（複数パターン対応）
+    if "```json" in text:
+        text = text.split("```json", 1)[1]
+        if "```" in text:
+            text = text.split("```", 1)[0]
+        text = text.strip()
+    elif "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 3:
+            text = parts[1].strip()
+        elif len(parts) >= 2:
+            text = parts[1].strip()
+
+    # 方法1: 最初の { から最後の } まで
     start = text.find("{")
     end = text.rfind("}")
-    if start != -1 and end != -1:
+    if start != -1 and end != -1 and end > start:
         try:
             return json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            print(f"  [JSON PARSE] Method 1 failed: {e}", flush=True)
 
+    # 方法2: ブレースのバランスを追跡して正しい終端を見つける
+    if start != -1:
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i in range(start, len(text)):
+            c = text[i]
+            if escape_next:
+                escape_next = False
+                continue
+            if c == '\\':
+                escape_next = True
+                continue
+            if c == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start:i + 1])
+                    except json.JSONDecodeError as e:
+                        print(f"  [JSON PARSE] Method 2 failed at pos {i}: {e}", flush=True)
+                    break
+
+    # 方法3: 切り詰められたJSONの修復を試みる
+    if start != -1:
+        json_text = text[start:]
+        # 末尾に閉じブレースを追加して修復を試みる
+        for extra in ['"}]}', '"}],"direction_notes_html":"<p>自動生成</p>"}', '"]}}', '"}', '}']:
+            try:
+                return json.loads(json_text + extra)
+            except json.JSONDecodeError:
+                continue
+
+    print(f"  [JSON PARSE] All methods failed. Text length={len(text)}, first 200 chars: {text[:200]}", flush=True)
     return {}
