@@ -2,11 +2,18 @@
 """演出エージェントが生成したdata.jsonと各素材を統合してHTMLを生成する"""
 
 import argparse
+import base64
 import json
 import re
 import sys
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 try:
     from jinja2 import Environment, FileSystemLoader
@@ -25,6 +32,60 @@ def load_json(path: Path, default=None):
         except (json.JSONDecodeError, IOError) as e:
             print(f"  [WARN] JSON読み込みエラー ({path}): {e}")
     return default if default is not None else {}
+
+
+def _image_to_base64(image_path: Path, max_width: int = 800, quality: int = 75) -> str:
+    """画像ファイルを圧縮してBase64データURIに変換する"""
+    if not image_path.exists():
+        return ""
+    try:
+        if Image is None:
+            # Pillowがない場合はそのまま読み込み
+            data = image_path.read_bytes()
+            ext = image_path.suffix.lower()
+            mime = "image/png" if ext == ".png" else "image/jpeg"
+            return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+        img = Image.open(image_path)
+        # RGBA→RGB変換（JPEG用）
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        # リサイズ（幅がmax_widthを超える場合）
+        if img.width > max_width:
+            ratio = max_width / img.width
+            new_size = (max_width, int(img.height * ratio))
+            img = img.resize(new_size, Image.LANCZOS)
+        # JPEG圧縮してBase64化
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG", quality=quality, optimize=True)
+        b64 = base64.b64encode(buffer.getvalue()).decode()
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception as e:
+        print(f"  [WARN] 画像変換エラー ({image_path}): {e}")
+        return ""
+
+
+def _embed_images(output_dir: Path, diagram_images: list, realistic_images: list) -> None:
+    """画像リストにBase64データURIを追加（in-place）"""
+    print("  画像をBase64に変換中...")
+    count = 0
+    for img in diagram_images:
+        if not img.get("success"):
+            continue
+        fpath = output_dir / "images" / "diagrams" / img.get("filename", "")
+        data_uri = _image_to_base64(fpath, max_width=900, quality=70)
+        if data_uri:
+            img["image_data"] = data_uri
+            count += 1
+    for img in realistic_images:
+        if not img.get("success"):
+            continue
+        fpath = output_dir / "images" / "realistic" / img.get("filename", "")
+        data_uri = _image_to_base64(fpath, max_width=700, quality=65)
+        if data_uri:
+            img["image_data"] = data_uri
+            count += 1
+    print(f"  → {count}枚の画像を埋め込みました")
 
 
 def _normalize(name: str) -> str:
@@ -100,6 +161,7 @@ def map_materials_to_sections(
                     "type_label": "図解",
                     "title": f"図{img.get('index', '')}: {img.get('section', '')}",
                     "image_path": f"images/diagrams/{img.get('filename', '')}",
+                    "image_data": img.get("image_data", ""),
                     "thumbnail": "",
                     "url": "",
                     "description": img.get("prompt", "")[:80],
@@ -117,6 +179,7 @@ def map_materials_to_sections(
                     "type_label": "写真",
                     "title": img.get("section", ""),
                     "image_path": f"images/realistic/{img.get('filename', '')}",
+                    "image_data": img.get("image_data", ""),
                     "thumbnail": "",
                     "url": "",
                     "description": img.get("prompt", "")[:80],
@@ -214,6 +277,9 @@ def main():
     if not overview.strip().startswith("<"):
         overview = f"<p>{overview}</p>"
     sections = data.get("sections", [])
+
+    # 画像をBase64に変換（HTML単体で画像表示可能にする）
+    _embed_images(output_dir, diagram_images, realistic_images)
 
     # 素材を自動マッピング
     enriched_sections = map_materials_to_sections(

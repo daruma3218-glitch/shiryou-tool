@@ -64,10 +64,12 @@
           <svg x-show="!darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
           <svg x-show="darkMode" x-cloak class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
         </button>
+        {% if job_id %}
         <a href="/download/{{ job_id }}" class="px-3 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 no-underline flex items-center gap-1">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
           ZIP
         </a>
+        {% endif %}
         <button @click="window.print()" class="px-3 py-1.5 text-sm bg-brand-500 text-white rounded-lg hover:bg-brand-600">
           印刷
         </button>
@@ -250,7 +252,11 @@
             <div class="space-y-2 max-h-[500px] overflow-y-auto">
               {% for mat in section.materials %}
               <div class="flex items-start gap-2 p-2 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:shadow-sm transition">
-                {% if mat.image_path %}
+                {% if mat.image_data %}
+                <img src="{{ mat.image_data }}"
+                     @click="lightboxImage='{{ mat.image_data }}'"
+                     class="w-20 h-14 object-cover rounded cursor-pointer flex-shrink-0 hover:opacity-80 transition">
+                {% elif mat.image_path %}
                 <img src="{{ mat.image_path }}"
                      @click="lightboxImage='{{ mat.image_path }}'"
                      class="w-20 h-14 object-cover rounded cursor-pointer flex-shrink-0 hover:opacity-80 transition">
@@ -347,9 +353,15 @@
           {% for img in diagram_images %}
           {% if img.success %}
           <div class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700">
+            {% if img.image_data %}
+            <img src="{{ img.image_data }}" alt="{{ img.section }}"
+                 @click="lightboxImage='{{ img.image_data }}'"
+                 class="w-full object-contain bg-gray-100 dark:bg-gray-700" style="max-height: 300px;">
+            {% else %}
             <img src="images/diagrams/{{ img.filename }}" alt="{{ img.section }}"
                  @click="lightboxImage='images/diagrams/{{ img.filename }}'"
                  class="w-full object-contain bg-gray-100 dark:bg-gray-700" style="max-height: 300px;">
+            {% endif %}
             <div class="p-3">
               <div class="text-sm font-medium">図{{ img.index }}: {{ img.section }}</div>
               <div class="text-xs text-gray-400 mt-1">{{ img.prompt }}</div>
@@ -367,9 +379,15 @@
           {% for img in realistic_images %}
           {% if img.success %}
           <div class="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700">
+            {% if img.image_data %}
+            <img src="{{ img.image_data }}" alt="{{ img.section }}"
+                 @click="lightboxImage='{{ img.image_data }}'"
+                 class="w-full h-48 object-cover">
+            {% else %}
             <img src="images/realistic/{{ img.filename }}" alt="{{ img.section }}"
                  @click="lightboxImage='images/realistic/{{ img.filename }}'"
                  class="w-full h-48 object-cover">
+            {% endif %}
             <div class="p-3">
               <div class="text-sm font-medium">{{ img.section }}</div>
               <div class="text-xs text-gray-400 mt-1">{{ img.prompt }}</div>
