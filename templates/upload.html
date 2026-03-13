@@ -48,7 +48,7 @@
         <h1 class="text-2xl font-bold text-gray-900 mb-1">新しい資料を作成</h1>
         <p class="text-sm text-gray-500 mb-8">完成原稿をセットするだけで、動画制作に必要な素材を自動収集します</p>
 
-        {% if not has_anthropic_key or not has_gemini_key %}
+        {% if not has_anthropic_key or not has_gemini_key or not has_youtube_key %}
         <div class="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
           <div class="flex gap-3">
             <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
@@ -57,6 +57,7 @@
               <div class="text-xs text-amber-700 mt-1 space-y-0.5">
                 {% if not has_anthropic_key %}<p>ANTHROPIC_API_KEY（リサーチ・統合用）</p>{% endif %}
                 {% if not has_gemini_key %}<p>GEMINI_API_KEY（画像生成用）</p>{% endif %}
+                {% if not has_youtube_key %}<p>YOUTUBE_API_KEY（YouTube動画検索用）</p>{% endif %}
               </div>
               <p class="text-xs text-amber-600 mt-2"><code class="bg-amber-100 px-1.5 py-0.5 rounded">.env</code> ファイルに設定してください</p>
             </div>
@@ -125,9 +126,8 @@
               <div class="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</div>
               <div class="pt-1.5">
                 <div class="text-sm font-medium text-gray-900">並行リサーチ</div>
-                <div class="text-xs text-gray-500 mt-0.5">4エージェント同時起動</div>
+                <div class="text-xs text-gray-500 mt-0.5">3エージェント同時起動</div>
                 <div class="mt-2 flex flex-wrap gap-1.5">
-                  <span class="text-[10px] px-2 py-0.5 bg-sky-50 text-sky-700 rounded-full">X/Twitter</span>
                   <span class="text-[10px] px-2 py-0.5 bg-red-50 text-red-700 rounded-full">YouTube</span>
                   <span class="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full">Web素材40件</span>
                   <span class="text-[10px] px-2 py-0.5 bg-violet-50 text-violet-700 rounded-full">図解20枚</span>
@@ -144,8 +144,8 @@
             <div class="step-item relative flex gap-3">
               <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold">3</div>
               <div class="pt-1.5">
-                <div class="text-sm font-medium text-gray-900">演出AIエージェント</div>
-                <div class="text-xs text-gray-500 mt-0.5">統合・構成設計・HTML出力</div>
+                <div class="text-sm font-medium text-gray-900">HTML資料生成</div>
+                <div class="text-xs text-gray-500 mt-0.5">素材統合・HTML出力</div>
               </div>
             </div>
           </div>

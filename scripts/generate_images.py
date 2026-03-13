@@ -35,6 +35,7 @@ def build_prompt(user_prompt: str, mode: str) -> str:
             "white (#FFFFFF), dark gray (#1F2937), and light gray (#F3F4F6). "
             "The design should be minimal, professional, and easy to read "
             "at a glance. Use large, bold text for key numbers and labels. "
+            "IMPORTANT: All text, labels, titles, and annotations in the image MUST be in Japanese (日本語). "
             "Aspect ratio should be 16:9 for video presentation. "
         )
     else:  # realistic

@@ -121,33 +121,37 @@ def index():
     """アップロードページ"""
     # 過去のジョブ一覧を取得
     past_jobs = []
-    if OUTPUT_DIR.exists():
-        for d in sorted(OUTPUT_DIR.iterdir(), reverse=True):
-            if d.is_dir() and (d / "index.html").exists():
-                progress = {}
-                progress_path = d / "progress.json"
-                if progress_path.exists():
-                    try:
-                        progress = json.loads(progress_path.read_text(encoding="utf-8"))
-                    except Exception:
-                        pass
-                data_path = d / "data.json"
-                title = d.name
-                if data_path.exists():
-                    try:
-                        data = json.loads(data_path.read_text(encoding="utf-8"))
-                        title = data.get("title", d.name)
-                    except Exception:
-                        pass
-                past_jobs.append({
-                    "id": d.name,
-                    "title": title,
-                    "status": progress.get("status", "completed"),
-                    "date": d.name[:8] if len(d.name) >= 8 else "",
-                })
+    try:
+        if OUTPUT_DIR.exists():
+            for d in sorted(OUTPUT_DIR.iterdir(), reverse=True):
+                if d.is_dir() and (d / "index.html").exists():
+                    progress = {}
+                    progress_path = d / "progress.json"
+                    if progress_path.exists():
+                        try:
+                            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+                        except Exception:
+                            pass
+                    data_path = d / "data.json"
+                    title = d.name
+                    if data_path.exists():
+                        try:
+                            data = json.loads(data_path.read_text(encoding="utf-8"))
+                            title = data.get("title", d.name)
+                        except Exception:
+                            pass
+                    past_jobs.append({
+                        "id": d.name,
+                        "title": title,
+                        "status": progress.get("status", "completed"),
+                        "date": d.name[:8] if len(d.name) >= 8 else "",
+                    })
+    except PermissionError:
+        pass
     has_gemini_key = bool(os.environ.get("GEMINI_API_KEY"))
     has_anthropic_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    return render_template("upload.html", past_jobs=past_jobs, has_gemini_key=has_gemini_key, has_anthropic_key=has_anthropic_key)
+    has_youtube_key = bool(os.environ.get("YOUTUBE_API_KEY"))
+    return render_template("upload.html", past_jobs=past_jobs, has_gemini_key=has_gemini_key, has_anthropic_key=has_anthropic_key, has_youtube_key=has_youtube_key)
 
 
 @app.route("/start", methods=["POST"])

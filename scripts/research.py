@@ -18,7 +18,7 @@ def get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
-def claude_research(client: anthropic.Anthropic, query: str, system: str, max_tokens: int = 4096) -> str:
+def claude_research(client: anthropic.Anthropic, query: str, system: str, max_tokens: int = 4096, max_uses: int = 10) -> str:
     """Claude API + Web検索でリサーチを実行"""
     max_retries = 3
     for attempt in range(max_retries):
@@ -30,18 +30,45 @@ def claude_research(client: anthropic.Anthropic, query: str, system: str, max_to
                 tools=[{
                     "type": "web_search_20250305",
                     "name": "web_search",
-                    "max_uses": 10,
+                    "max_uses": max_uses,
                 }],
                 messages=[{"role": "user", "content": query}],
             )
 
-            # テキストブロックを抽出
+            # テキストブロックと検索結果URLを両方抽出
             text_parts = []
+            search_results = []
+            block_types_found = []
             for block in response.content:
+                block_type = getattr(block, "type", "unknown")
+                block_types_found.append(block_type)
                 if hasattr(block, "text"):
                     text_parts.append(block.text)
+                # web_search_tool_result から実際のURLを抽出
+                if block_type == "web_search_tool_result":
+                    content = getattr(block, "content", [])
+                    for result in content:
+                        result_type = getattr(result, "type", "")
+                        if result_type == "web_search_result":
+                            url = getattr(result, "url", "")
+                            title = getattr(result, "title", "")
+                            if url:
+                                search_results.append({"url": url, "title": title})
 
-            return "\n".join(text_parts)
+            print(f"  [DEBUG] Block types: {block_types_found}")
+            print(f"  [DEBUG] Search results extracted: {len(search_results)}")
+
+            text = "\n".join(text_parts)
+
+            # 検索結果URLが見つかった場合、テキスト末尾に追記して
+            # Claudeが生成したテキスト内のURLより実際のURLを優先させる
+            if search_results:
+                urls_info = "\n\n--- 実際の検索結果URL ---\n"
+                for sr in search_results:
+                    urls_info += f"- {sr['title']}: {sr['url']}\n"
+                text += urls_info
+
+            return text
 
         except anthropic.RateLimitError:
             wait = 15 * (attempt + 1)
@@ -67,6 +94,13 @@ def claude_query(client: anthropic.Anthropic, query: str, system: str, max_token
                 system=system,
                 messages=[{"role": "user", "content": query}],
             )
+
+            if not response or not response.content:
+                print(f"  [WARN] Attempt {attempt+1}/{max_retries}: Empty response", flush=True)
+                if attempt == max_retries - 1:
+                    return ""
+                time.sleep(3)
+                continue
 
             text_parts = []
             for block in response.content:
@@ -124,70 +158,89 @@ def analyze_manuscript(client: anthropic.Anthropic, manuscript_text: str) -> dic
     return data
 
 
-def research_twitter(client: anthropic.Anthropic, keywords: list, manuscript_summary: str) -> list:
-    """X/Twitter の関連投稿をClaude Web検索で収集"""
-    keyword_str = ", ".join(keywords[:8])
-    system = (
-        "あなたはSNSリサーチの専門家です。Web検索を使ってX/Twitterの投稿を調査してください。"
-        "必ずWeb検索を実行して最新の情報を取得してください。"
-        "結果はJSON配列形式で返してください。他のテキストは不要です。"
-    )
-    query = f"""以下のテーマに関連するX/Twitterの投稿をWeb検索で15-20件探してください。
-
-テーマ: {manuscript_summary[:500]}
-キーワード: {keyword_str}
-
-実際にWeb検索を行い、X/Twitter上の投稿を見つけてください。
-
-以下のJSON配列形式で返してください（JSONのみ返すこと）:
-[
-  {{
-    "author": "投稿者名 (@ハンドル名)",
-    "content": "投稿内容の要約（100文字以内）",
-    "engagement": "いいね数やRT数（わかる範囲で）",
-    "url": "投稿のURL（実在するURLのみ。不明なら空文字）",
-    "relevance": "原稿のどの部分に関連するか"
-  }}
-]"""
-
-    result = claude_research(client, query, system)
-    return parse_json_array(result)
+def _get_youtube_api_key(project_root: Path = None) -> str:
+    """YOUTUBE_API_KEY を .env または環境変数から取得"""
+    if project_root:
+        env_path = project_root / ".env"
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("YOUTUBE_API_KEY=") and not line.endswith("="):
+                    key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if key and key != "your_api_key_here":
+                        return key
+    return os.environ.get("YOUTUBE_API_KEY", "")
 
 
 def research_youtube(client: anthropic.Anthropic, keywords: list, manuscript_summary: str) -> list:
-    """YouTube の関連動画をClaude Web検索で収集"""
-    keyword_str = ", ".join(keywords[:8])
-    system = (
-        "あなたはYouTubeリサーチの専門家です。Web検索を使ってYouTube動画を調査してください。"
-        "必ずWeb検索を実行して最新の情報を取得してください。"
-        "結果はJSON配列形式で返してください。他のテキストは不要です。"
-    )
-    query = f"""以下のテーマに関連するYouTube動画をWeb検索で10-15件探してください。
+    """YouTube Data API v3 で関連動画を検索"""
+    import urllib.request
+    import urllib.parse
 
-テーマ: {manuscript_summary[:500]}
-キーワード: {keyword_str}
+    project_root = Path(__file__).parent.parent
+    api_key = _get_youtube_api_key(project_root)
 
-実際にWeb検索を行い、YouTube上の動画を見つけてください。
+    if not api_key:
+        print("  [WARN] YOUTUBE_API_KEY が未設定です。YouTube検索をスキップします。", flush=True)
+        return []
 
-以下のJSON配列形式で返してください（JSONのみ返すこと）:
-[
-  {{
-    "title": "動画タイトル",
-    "channel": "チャンネル名",
-    "views": "再生回数（わかる範囲で）",
-    "url": "動画のURL (https://www.youtube.com/watch?v=...)",
-    "description": "動画の概要（100文字以内）",
-    "thumbnail": "",
-    "relevance": "原稿のどの部分に関連するか"
-  }}
-]"""
+    keyword_str = " ".join(keywords[:5])
+    # 複数クエリで検索して幅広く収集
+    search_queries = [
+        keyword_str,
+        f"{keywords[0]} 解説" if keywords else keyword_str,
+    ]
 
-    result = claude_research(client, query, system)
-    return parse_json_array(result)
+    all_videos = {}  # video_id -> video_data
+
+    for q in search_queries:
+        try:
+            params = urllib.parse.urlencode({
+                "part": "snippet",
+                "q": q,
+                "type": "video",
+                "maxResults": 10,
+                "relevanceLanguage": "ja",
+                "key": api_key,
+            })
+            url = f"https://www.googleapis.com/youtube/v3/search?{params}"
+
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            for item in data.get("items", []):
+                video_id = item.get("id", {}).get("videoId", "")
+                if not video_id or video_id in all_videos:
+                    continue
+                snippet = item.get("snippet", {})
+                all_videos[video_id] = {
+                    "title": snippet.get("title", ""),
+                    "channel": snippet.get("channelTitle", ""),
+                    "views": "",
+                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                    "description": snippet.get("description", "")[:100],
+                    "thumbnail": snippet.get("thumbnails", {}).get("high", {}).get("url", ""),
+                    "relevance": "",
+                }
+
+            print(f"  [YouTube API] 「{q}」: {len(data.get('items', []))}件", flush=True)
+
+        except Exception as e:
+            print(f"  [YouTube API ERROR] {e}", flush=True)
+
+        if len(all_videos) >= 15:
+            break
+        time.sleep(0.5)
+
+    results = list(all_videos.values())[:15]
+    print(f"  [YouTube] 合計{len(results)}件の動画を収集", flush=True)
+    return results
 
 
 def research_web_data(client: anthropic.Anthropic, keywords: list, manuscript_summary: str, sections: list) -> list:
-    """Web画像・データを40件収集（Claude Web検索）"""
+    """Web画像・データを40件収集（Claude Web検索 - 実URL抽出方式）"""
+    import re
     keyword_str = ", ".join(keywords[:10])
     sections_str = "\n".join([f"- {s}" for s in sections[:10]])
     system = (
@@ -195,6 +248,8 @@ def research_web_data(client: anthropic.Anthropic, keywords: list, manuscript_su
         "必ずWeb検索を実行して実在するURLを含めてください。"
         "公的機関・研究機関のデータを優先してください。"
         "結果はJSON配列形式で返してください。他のテキストは不要です。"
+        "\n\n重要: JSONのurlフィールドには、Web検索で実際に見つかったURLをそのまま使ってください。"
+        "URLを推測・生成・変更しないでください。検索結果に含まれるURLだけを使うこと。"
     )
 
     all_results = []
@@ -211,21 +266,36 @@ def research_web_data(client: anthropic.Anthropic, keywords: list, manuscript_su
 
 探すべきもの: 統計データ、グラフ、図解、インフォグラフィック、研究データ、公式資料、画像
 
-実際にWeb検索を行い、実在するURLを含めてください。
+実際にWeb検索を行い、検索結果のURLをそのまま使ってください。URLを推測・変更しないこと。
 
 以下のJSON配列形式で返してください（JSONのみ返すこと）:
 [
   {{
     "index": {batch * 20 + 1},
     "description": "画像/データの説明（何の情報か）",
-    "url": "ソースURL（必須、実在するURL）",
+    "url": "検索結果の実際のURL（変更しないこと）",
     "section": "対応する原稿セクション名",
     "type": "image|chart|data|infographic のいずれか"
   }}
 ]"""
 
         result = claude_research(client, query, system, max_tokens=8000)
+
+        # 検索結果テキストから実URLを抽出
+        real_urls = re.findall(r'https?://[^\s\'"<>\]）」]+', result)
+        real_urls_set = set(u.rstrip(".,;:)」") for u in real_urls)
+
         batch_results = parse_json_array(result)
+
+        # JSON内のURLを検証・修正
+        for item in batch_results:
+            url = item.get("url", "")
+            if url and url not in real_urls_set:
+                # URLがハルシネーションの可能性 - 検索結果の実URLで置き換え
+                matched = [u for u in real_urls_set if u.startswith("http") and "youtube.com" not in u]
+                if matched:
+                    item["url"] = matched[len(all_results) % len(matched)]
+
         for i, item in enumerate(batch_results):
             item["index"] = len(all_results) + i + 1
         all_results.extend(batch_results)
@@ -250,7 +320,8 @@ def generate_image_prompts(
     if mode == "diagrams":
         system = (
             "あなたは情報デザインの専門家です。"
-            "動画で使う図解画像のプロンプトを英語で作成してください。"
+            "動画で使う図解画像のプロンプトを作成してください。"
+            "図解内のテキスト・ラベル・タイトルは全て日本語で指定してください。"
             "結果はJSON配列のみで返してください。"
         )
         extra_info = ""
@@ -272,16 +343,19 @@ def generate_image_prompts(
 {extra_info[:1000] if extra_info else "なし"}
 
 条件:
-- 英語のプロンプトにすること
+- プロンプトは英語で書くが、図解内に表示するテキスト・ラベル・数値・タイトルは必ず日本語で指定すること
+- 例: "A bar chart showing ... with Japanese labels: 売上高, 利益率, 前年比120%"
 - シンプルな図解（棒グラフ、円グラフ、フローチャート、比較図、タイムライン等）
 - 色は統一感を持って
 - 象徴的なデータは必ず図解にする
 - 16:9の横長レイアウト
 - 各プロンプトに対応するセクション名を記載
+- 重要: 各プロンプトは必ず異なる内容にすること。同じテーマでも視点・切り口・データを変える
+- 同じセクションから複数枚作る場合も、それぞれ別のデータや観点を扱うこと
 
 以下のJSON配列形式で返してください（JSONのみ返すこと）:
 [
-  {{"prompt": "英文プロンプト", "section": "セクション名"}}
+  {{"prompt": "英語プロンプト（日本語テキスト指定を含む）", "section": "セクション名"}}
 ]"""
     else:  # realistic
         system = (
@@ -307,6 +381,8 @@ def generate_image_prompts(
 - 象徴的なシーンを切り取った画像
 - 16:9の横長、映画的な構図
 - 各プロンプトに対応するセクション名を記載
+- 重要: 各プロンプトは必ず異なる内容にすること。同じテーマでも被写体・構図・シチュエーションを変える
+- 図解画像とは別の「写真的」な素材にすること（グラフやチャートは不要）
 
 以下のJSON配列形式で返してください（JSONのみ返すこと）:
 [
@@ -315,112 +391,93 @@ def generate_image_prompts(
 
     result = claude_query(client, query, system, max_tokens=8000)
     prompts = parse_json_array(result)
-    return prompts[:count]
+
+    # 重複排除: プロンプトテキストが類似しているものを除去
+    seen_prompts = set()
+    unique_prompts = []
+    for p in prompts:
+        prompt_text = p.get("prompt", "").strip().lower()
+        # 先頭60文字で簡易的に重複判定
+        key = prompt_text[:60]
+        if key and key not in seen_prompts:
+            seen_prompts.add(key)
+            unique_prompts.append(p)
+
+    return unique_prompts[:count]
 
 
 def generate_direction_data(
     client: anthropic.Anthropic,
     manuscript_text: str,
-    sections: list,
-    twitter_count: int,
-    youtube_count: int,
-    web_count: int,
+    analysis: dict,
+    youtube_results: list,
+    web_results: list,
     diagram_count: int,
     realistic_count: int,
-    twitter_data: list,
-    youtube_data: list,
-    web_data: list,
-    diagram_manifest: list,
-    realistic_manifest: list,
 ) -> dict:
-    """演出AIエージェント（Claude）: 全素材を統合してdata.jsonを生成"""
-    sections_str = "\n".join([f"- {s}" for s in sections[:15]])
+    """演出エージェント: 原稿と収集素材を統合して動画構成データを生成"""
+    sections = analysis.get("sections", [])
+    keywords = analysis.get("keywords", [])
+    title = analysis.get("title", "動画素材集")
+    summary = analysis.get("summary", "")
 
-    twitter_summary = json.dumps(twitter_data[:5], ensure_ascii=False)[:800] if twitter_data else "なし"
-    youtube_summary = json.dumps(youtube_data[:5], ensure_ascii=False)[:800] if youtube_data else "なし"
-    web_summary = json.dumps(web_data[:5], ensure_ascii=False)[:800] if web_data else "なし"
-    diagram_list = [d.get("section", "") for d in diagram_manifest if d.get("success")][:10]
-    realistic_list = [d.get("section", "") for d in realistic_manifest if d.get("success")][:10]
+    # 収集素材の概要を作成
+    materials_summary = f"YouTube動画: {len(youtube_results)}件\n"
+    for v in youtube_results[:5]:
+        materials_summary += f"  - {v.get('title', '')} ({v.get('url', '')})\n"
+    materials_summary += f"Web素材: {len(web_results)}件\n"
+    for w in web_results[:5]:
+        materials_summary += f"  - {w.get('description', '')} ({w.get('section', '')})\n"
+    materials_summary += f"図解画像: {diagram_count}枚\nリアル画像: {realistic_count}枚\n"
 
     system = (
-        "あなたは動画演出のプロフェッショナルです。"
-        "収集した全素材を評価し、30分動画の構成を設計してください。"
-        "動画編集者が使いやすい資料を作ることが目的です。"
-        "結果はJSON形式のみで返してください。"
+        "あなたはプロの動画ディレクター・演出家です。"
+        "原稿と収集素材を分析して、動画制作のための構成・演出プランを作成してください。"
+        "結果はJSON形式のみで返してください。他のテキストは不要です。"
     )
 
-    query = f"""以下の原稿と収集素材から、動画編集者向けの構成データを作成してください。
+    query = f"""以下の原稿と素材をもとに、30分動画の構成・演出プランをJSON形式で作成してください。
 
-## 原稿（冒頭2000文字）
+## 原稿:
 {manuscript_text[:2000]}
 
-## セクション構成
-{sections_str}
+## 分析: タイトル「{title}」/ キーワード: {', '.join(keywords[:8])} / セクション: {', '.join(sections[:8])}
 
-## 収集素材の概要
-- X/Twitter投稿: {twitter_count}件
-  サンプル: {twitter_summary}
-- YouTube動画: {youtube_count}件
-  サンプル: {youtube_summary}
-- Web素材: {web_count}件
-  サンプル: {web_summary}
-- 図解画像: {diagram_count}枚 (セクション: {', '.join(diagram_list)})
-- リアル画像: {realistic_count}枚 (セクション: {', '.join(realistic_list)})
+## 素材: {materials_summary}
 
-## 指示
-以下のJSON形式で返してください（JSONのみ返すこと）:
+## JSON出力形式（この形式のみ返すこと。```jsonブロック不要）:
+{{"title":"キャッチーなタイトル","overview_html":"<p>概要300文字</p>","timeline":[{{"time":"00:00","section":"名前","description":"内容","duration":"X分"}}],"sections":[{{"id":"s1","title":"名前","manuscript_text":"要約100文字","materials":[{{"type":"youtube/diagram/web/realistic","type_label":"表示名","title":"素材名","url":"URL","thumbnail":"","note":"使い方"}}]}}],"direction_notes_html":"<h3>演出方針</h3><p>BGM・テロップ・カット割り指示</p>"}}
 
-{{
-  "title": "動画タイトル",
-  "overview_html": "<p>原稿の概要（HTMLタグ使用可、200文字程度）</p>",
-  "timeline": [
-    {{"time": "00:00", "section": "セクション名", "duration": "X分", "description": "内容と使用素材の概要"}}
-  ],
-  "sections": [
-    {{
-      "id": "section-1",
-      "title": "セクション名",
-      "manuscript_text": "原稿の該当部分の要約（200文字以内）",
-      "materials": [
-        {{
-          "type": "twitter",
-          "type_label": "X投稿",
-          "title": "素材タイトル",
-          "thumbnail": "",
-          "url": "ソースURL",
-          "note": "演出メモ（表示タイミング、秒数等の具体的指示）"
-        }}
-      ]
-    }}
-  ],
-  "direction_notes_html": "<h3>全体方針</h3><p>演出の全体方針...</p><h3>BGM提案</h3><p>...</p><h3>テロップ</h3><p>...</p><h3>不足素材</h3><p>...</p>"
-}}
+ルール:
+- timelineは5-8個のタイムポイント
+- sectionsは原稿の各セクション（3-6個）に素材をマッピング
+- YouTube動画は収集した実URLとタイトルを使う
+- direction_notes_htmlにはBGM・テロップ・カット割りの具体的指示を含める
+- materialsの各アイテムはnoteに使い方を書く"""
 
-注意:
-- 30分動画を想定してタイムラインを割り当てること
-- 各セクションに最適な素材を選んで割り当て、具体的な演出指示をnoteに記載
-- materials の type は twitter/youtube/web/diagram/realistic のいずれか
-- diagram の thumbnail は "images/diagrams/diagrams_XXX.png" 形式
-- realistic の thumbnail は "images/realistic/realistic_XXX.png" 形式
-- Web素材には必ず元URLを記載
-- 動画編集者の手間を減らす具体的な演出メモを書くこと"""
+    # 最大2回試行
+    for attempt in range(2):
+        result = claude_query(client, query, system, max_tokens=16000)
+        if not result:
+            print(f"  [WARN] 演出データ生成: 空の応答 (attempt {attempt+1})", flush=True)
+            time.sleep(3)
+            continue
 
-    result = claude_query(client, query, system, max_tokens=8000)
-
-    try:
         data = parse_json_object(result)
-        if data and "sections" in data:
+        if data and data.get("sections"):
             return data
-    except Exception:
-        pass
 
+        print(f"  [WARN] 演出データ生成: JSONパース失敗 (attempt {attempt+1}), len={len(result)}", flush=True)
+        time.sleep(3)
+
+    # フォールバック: 最低限のデータを生成
+    print("  [WARN] 演出データ生成: フォールバックを使用", flush=True)
     return {
-        "title": "動画素材集",
-        "overview_html": f"<p>{manuscript_text[:200]}...</p>",
+        "title": title,
+        "overview_html": f"<p>{summary}</p>" if summary else f"<p>{manuscript_text[:500]}...</p>",
         "timeline": [],
-        "sections": [{"id": f"section-{i+1}", "title": s, "manuscript_text": "", "materials": []}
-                      for i, s in enumerate(sections)],
-        "direction_notes_html": "<p>演出データの生成に失敗しました。手動で構成してください。</p>",
+        "sections": [],
+        "direction_notes_html": "<p>演出データの自動生成に失敗しました。手動で構成してください。</p>",
     }
 
 

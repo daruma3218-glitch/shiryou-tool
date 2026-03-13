@@ -52,14 +52,12 @@ def main():
     data = load_json(output_dir / "data.json", {})
 
     # 各素材データ読み込み
-    twitter_data = load_json(output_dir / "research" / "twitter_results.json", {})
     youtube_data = load_json(output_dir / "research" / "youtube_results.json", {})
     web_images_data = load_json(output_dir / "web_images" / "web_images.json", {})
     diagrams_manifest = load_json(output_dir / "images" / "diagrams" / "diagrams_manifest.json", {})
     realistic_manifest = load_json(output_dir / "images" / "realistic" / "realistic_manifest.json", {})
 
     # データ整理
-    twitter_posts = twitter_data.get("results", [])
     youtube_videos = youtube_data.get("results", [])
     web_data = web_images_data.get("results", [])
     diagram_images = diagrams_manifest.get("results", [])
@@ -85,13 +83,11 @@ def main():
         overview_html=overview_html,
         timeline=timeline,
         sections=sections,
-        twitter_posts=twitter_posts,
         youtube_videos=youtube_videos,
         web_data=web_data,
         diagram_images=diagram_images,
         realistic_images=realistic_images,
         direction_notes_html=direction_notes_html,
-        twitter_count=len(twitter_posts),
         youtube_count=len(youtube_videos),
         webdata_count=len(web_data),
         diagrams_count=len([i for i in diagram_images if i.get("success")]),
@@ -105,7 +101,6 @@ def main():
     print(f"\n{'='*60}")
     print(f"  HTML資料生成完了")
     print(f"  出力: {html_path}")
-    print(f"  Twitter: {len(twitter_posts)}件")
     print(f"  YouTube: {len(youtube_videos)}件")
     print(f"  Web素材: {len(web_data)}件")
     print(f"  図解: {len([i for i in diagram_images if i.get('success')])}枚")
