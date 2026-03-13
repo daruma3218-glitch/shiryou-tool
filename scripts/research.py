@@ -474,8 +474,8 @@ def generate_direction_data(
     query = f"""以下の原稿と素材リストから、30分動画の演出プランをJSON形式で作成してください。
 動画編集者が「どの素材をどのタイミングで使うか」すぐわかるよう、具体的に指示してください。
 
-原稿（冒頭2000文字）:
-{manuscript_text[:2000]}
+原稿（冒頭6000文字）:
+{manuscript_text[:6000]}
 
 セクション構成（このtitleをそのまま使うこと）:
 {sections_list}

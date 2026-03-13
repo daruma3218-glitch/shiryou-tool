@@ -95,6 +95,220 @@ def _normalize(name: str) -> str:
     return name.lower()
 
 
+def _find_section_position(manuscript_text: str, section_title: str) -> int:
+    """原稿テキスト内でセクションタイトルに最も近い行の位置を探す"""
+    lines = manuscript_text.split("\n")
+    norm_title = _normalize(section_title)
+
+    # タイトルからキーフレーズを抽出（記号除去・正規化済み）
+    # 長いキーフレーズを優先的に検索
+    key_phrases = []
+    # 「：」や「——」で分割してキーフレーズを取得
+    parts = re.split(r'[：:——\-]+', section_title)
+    for part in parts:
+        cleaned = part.strip()
+        if len(cleaned) >= 4:
+            key_phrases.append(cleaned)
+            # さらに前半だけのサブフレーズも追加（「そもそも」等の挿入対策）
+            if len(cleaned) >= 8:
+                key_phrases.append(cleaned[:len(cleaned)//2])
+
+    # 原稿の各行をチェック
+    best_pos = -1
+    best_score = 0.0
+
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+
+        norm_line = _normalize(line_stripped)
+
+        # キーフレーズが行に含まれるかチェック
+        for phrase in key_phrases:
+            norm_phrase = _normalize(phrase)
+            if norm_phrase and len(norm_phrase) >= 3 and norm_phrase in norm_line:
+                score = len(norm_phrase) / max(len(norm_title), 1)
+                if score > best_score:
+                    best_score = score
+                    best_pos = i
+
+        # 正規化後の部分一致チェック
+        if best_pos < 0 and norm_title:
+            # タイトルの前半部分で検索
+            title_prefix = norm_title[:min(len(norm_title), 10)]
+            if title_prefix in norm_line:
+                best_pos = i
+                best_score = 0.5
+
+    return best_pos
+
+
+def _split_manuscript_by_sections(manuscript_text: str, sections: list) -> list:
+    """原稿テキストをセクションごとに分割し、各セクションに原稿テキストを追加する"""
+    if not manuscript_text or not sections:
+        return sections
+
+    lines = manuscript_text.split("\n")
+
+    # 各セクションの原稿内での開始位置を特定
+    section_positions = []
+    for section in sections:
+        title = section.get("title", "")
+        pos = _find_section_position(manuscript_text, title)
+        section_positions.append(pos)
+
+    # 密集した位置を解消する（リスト形式の目次行に複数セクションが重なる場合）
+    # 3行以内に密集しているセクション群を検出し、後続の内容範囲を均等に分割する
+    sorted_by_pos = sorted(
+        [(i, p) for i, p in enumerate(section_positions) if p >= 0],
+        key=lambda x: x[1],
+    )
+
+    # 密集グループを検出
+    clusters = []  # [(start_vi, end_vi), ...]
+    i = 0
+    while i < len(sorted_by_pos):
+        j = i
+        while j + 1 < len(sorted_by_pos) and sorted_by_pos[j + 1][1] - sorted_by_pos[j][1] <= 3:
+            j += 1
+        if j > i:
+            # i〜jが密集グループ
+            clusters.append((i, j))
+        i = j + 1
+
+    for cl_start, cl_end in clusters:
+        cluster_items = sorted_by_pos[cl_start:cl_end + 1]
+        cluster_min_pos = cluster_items[0][1]
+        # 密集グループの後のコンテンツ開始位置（目次リストの直後）
+        content_start = cluster_items[-1][1] + 1
+        # コンテンツ終了位置（次の非密集セクションの開始位置）
+        if cl_end + 1 < len(sorted_by_pos):
+            content_end = sorted_by_pos[cl_end + 1][1]
+        else:
+            content_end = len(lines)
+
+        # コンテンツ範囲を密集グループのセクション数で均等分割
+        content_lines = content_end - content_start
+        n_sections = len(cluster_items)
+        per_section = max(content_lines // n_sections, 1)
+
+        for ci, (sec_idx, _) in enumerate(cluster_items):
+            new_pos = content_start + ci * per_section
+            section_positions[sec_idx] = new_pos
+
+    # 有効な位置を持つセクションのペアを作成
+    indexed = [(i, pos) for i, pos in enumerate(section_positions)]
+    # 位置が見つかったものだけを位置順にソート
+    valid = sorted([(i, p) for i, p in indexed if p >= 0], key=lambda x: x[1])
+
+    # 各セクションに原稿テキストを割り当て
+    result = []
+    for section in sections:
+        result.append(dict(section))
+
+    for vi, (sec_idx, start_pos) in enumerate(valid):
+        # 終了位置: 次の有効なセクションの開始位置、または原稿の末尾
+        if vi + 1 < len(valid):
+            end_pos = valid[vi + 1][1]
+        else:
+            end_pos = len(lines)
+
+        # セクションの原稿テキストを切り出し
+        excerpt_lines = lines[start_pos:end_pos]
+        # 末尾の空行を除去
+        while excerpt_lines and not excerpt_lines[-1].strip():
+            excerpt_lines.pop()
+        excerpt = "\n".join(excerpt_lines)
+        result[sec_idx]["manuscript_excerpt"] = excerpt
+
+    # 位置が見つからなかったセクションには空文字を設定
+    for sec in result:
+        if "manuscript_excerpt" not in sec:
+            sec["manuscript_excerpt"] = ""
+
+    matched = sum(1 for p in section_positions if p >= 0)
+    print(f"  原稿テキスト分割: {matched}/{len(sections)}セクションにマッチ")
+
+    return result
+
+
+def _is_fallback_placement(placements: list) -> bool:
+    """material_placementが汎用フォールバックかどうか判定"""
+    if not placements:
+        return True
+    # すべてのセクションで同一の配置指示の場合はフォールバック
+    fallback_patterns = [
+        "図1を全画面表示",
+        "写真2を背景に",
+        "Web素材3のグラフ",
+    ]
+    for p in placements:
+        for pattern in fallback_patterns:
+            if pattern in p:
+                return True
+    return False
+
+
+def _generate_material_placements(enriched_sections: list) -> None:
+    """マッピング済み素材から具体的な配置指示を自動生成（in-place）"""
+    print("  素材配置タイムラインを生成中...")
+    count = 0
+
+    for section in enriched_sections:
+        existing = section.get("material_placement", [])
+        # フォールバックでない場合はスキップ（Claudeが具体的な指示を生成済み）
+        if existing and not _is_fallback_placement(existing):
+            continue
+
+        materials = section.get("materials", [])
+        if not materials:
+            section["material_placement"] = []
+            continue
+
+        placements = []
+
+        # 素材タイプ別にグループ化
+        diagrams = [m for m in materials if m["type"] == "diagram"]
+        ai_images = [m for m in materials if m["type"] == "realistic"]
+        web_mats = [m for m in materials if m["type"] == "web"]
+        youtube_mats = [m for m in materials if m["type"] == "youtube"]
+
+        # 図解の配置指示
+        for i, d in enumerate(diagrams[:5]):
+            title = d.get("title", "")
+            desc = d.get("description", "")[:40]
+            if i == 0:
+                placements.append(f"{title} をセクション冒頭で全画面表示しながらナレーション")
+            else:
+                placements.append(f"{title} を説明に合わせて表示")
+
+        # AI画像の配置指示
+        for i, img in enumerate(ai_images[:3]):
+            desc = img.get("description", "")[:50]
+            if desc:
+                placements.append(f"AI画像（{desc}）を背景映像として使用")
+            else:
+                placements.append(f"AI画像をカットシーンの背景として挿入")
+
+        # Web素材の配置指示
+        for w in web_mats[:2]:
+            desc = w.get("description", "")[:50]
+            if desc:
+                placements.append(f"Web素材（{desc}）のデータを図表として活用")
+
+        # YouTube動画の配置指示
+        for yt in youtube_mats[:1]:
+            title = yt.get("title", "")[:40]
+            if title:
+                placements.append(f"参考映像「{title}」を参照可能")
+
+        section["material_placement"] = placements
+        count += 1
+
+    print(f"  → {count}セクションの配置指示を生成しました")
+
+
 def _section_match_score(section_title: str, material_section: str) -> float:
     """セクション名のマッチングスコアを計算（0.0〜1.0）"""
     norm_sec = _normalize(section_title)
@@ -278,6 +492,9 @@ def main():
         overview = f"<p>{overview}</p>"
     sections = data.get("sections", [])
 
+    # 原稿テキストをセクションごとに分割
+    sections = _split_manuscript_by_sections(manuscript_text, sections)
+
     # 画像をBase64に変換（HTML単体で画像表示可能にする）
     _embed_images(output_dir, diagram_images, realistic_images)
 
@@ -285,6 +502,9 @@ def main():
     enriched_sections = map_materials_to_sections(
         sections, diagram_images, realistic_images, web_data, youtube_videos
     )
+
+    # 素材配置タイムラインを自動生成（フォールバックの場合のみ）
+    _generate_material_placements(enriched_sections)
 
     # テンプレートレンダリング
     env = Environment(
