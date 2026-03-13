@@ -120,7 +120,7 @@
           <a href="#realistic" @click="activeSection='realistic'"
              :class="activeSection === 'realistic' ? 'active' : ''"
              class="sidebar-link block px-3 py-2 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-            リアル画像 ({{ realistic_count }}枚)
+            AI画像 ({{ realistic_count }}枚)
           </a>
         </div>
       </nav>
@@ -140,7 +140,7 @@
             <span>YouTube: {{ youtube_count }}件</span>
             <span>Web素材: {{ webdata_count }}件</span>
             <span>図解: {{ diagrams_count }}枚</span>
-            <span>リアル画像: {{ realistic_count }}枚</span>
+            <span>AI画像: {{ realistic_count }}枚</span>
           </div>
         </div>
       </section>
@@ -394,7 +394,7 @@
 
       <!-- ===== Realistic Images Gallery ===== -->
       <section id="realistic" class="mb-12 fade-in print-break">
-        <h2 class="text-2xl font-bold mb-4">リアル画像素材</h2>
+        <h2 class="text-2xl font-bold mb-4">AI画像素材</h2>
         <div class="image-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {% for img in realistic_images %}
           {% if img.success %}

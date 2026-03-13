@@ -173,9 +173,9 @@ class MaterialPipeline:
         self.log("system", "Phase 1 完了", f"YouTube {len(youtube_results)}件, Web {len(web_results)}件, 図解 {len(diagram_prompts)}枚")
         self.report(1, "Phase 1 完了: 並行リサーチ終了", 50)
 
-        # ===== Phase 2: 追加リアル画像生成 =====
+        # ===== Phase 2: 追加AI画像生成 =====
         self.report(2, "追加画像プロンプト作成中...", 55)
-        self.log("ai", "リアル画像のプロンプトを作成中...", "収集済み素材を分析して不足を補う画像を設計")
+        self.log("ai", "AI画像のプロンプトを作成中...", "収集済み素材を分析して不足を補う画像を設計")
         self.agent("realistic", "running", "プロンプトを作成中...")
 
         # 既存素材の概要をまとめる
@@ -191,19 +191,19 @@ class MaterialPipeline:
         )
         realistic_prompts_path = self.output_dir / "realistic_prompts.json"
         save_json(realistic_prompts_path, {"prompts": realistic_prompts})
-        self.log("image", f"リアル画像プロンプト{len(realistic_prompts)}件作成完了")
+        self.log("image", f"AI画像プロンプト{len(realistic_prompts)}件作成完了")
 
         if realistic_prompts:
             self.agent("realistic", "running", f"Geminiで{len(realistic_prompts)}枚生成中...", count=0, total=len(realistic_prompts))
-            self.report(2, f"リアル画像{len(realistic_prompts)}枚生成中...", 60)
-            self.log("image", f"Geminiでリアル画像{len(realistic_prompts)}枚の生成を開始", "フォトリアリスティック品質")
+            self.report(2, f"AI画像{len(realistic_prompts)}枚生成中...", 60)
+            self.log("image", f"GeminiでAI画像{len(realistic_prompts)}枚の生成を開始", "フォトリアリスティック品質")
             self._run_image_generation("realistic", 30, realistic_prompts_path)
-            self.log("image", "リアル画像の生成処理が完了")
+            self.log("image", "AI画像の生成処理が完了")
 
         # 最終結果を確認
         r_manifest = load_json(self.output_dir / "images" / "realistic" / "realistic_manifest.json")
         r_ok = len([r for r in r_manifest.get("results", []) if r.get("success")])
-        self.agent("realistic", "completed", f"{r_ok}枚のリアル画像を生成", count=r_ok, total=len(realistic_prompts))
+        self.agent("realistic", "completed", f"{r_ok}枚のAI画像を生成", count=r_ok, total=len(realistic_prompts))
 
         self.log("system", "Phase 2 完了")
         self.report(2, "Phase 2 完了: 追加画像生成終了", 75)
@@ -259,14 +259,14 @@ class MaterialPipeline:
         print(f"  YouTube: {len(youtube_results)}件")
         print(f"  Web素材: {len(web_results)}件")
         print(f"  図解: {len([d for d in diagram_results if d.get('success')])}枚")
-        print(f"  リアル画像: {len([d for d in realistic_results if d.get('success')])}枚")
+        print(f"  AI画像: {len([d for d in realistic_results if d.get('success')])}枚")
         print(f"{'='*60}")
 
     def _run_image_generation(self, mode: str, count: int, prompts_path: Path):
         """画像生成スクリプトを実行（進捗をポーリング）"""
         output_subdir = self.output_dir / "images" / mode
         progress_path = output_subdir / f"{mode}_progress.json"
-        mode_label = "図解" if mode == "diagrams" else "リアル画像"
+        mode_label = "図解" if mode == "diagrams" else "AI画像"
         agent_id = mode  # "diagrams" or "realistic"
         cmd = [
             sys.executable,

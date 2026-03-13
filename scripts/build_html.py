@@ -168,7 +168,7 @@ def map_materials_to_sections(
                     "_score": score,
                 })
 
-        # リアル画像をマッピング
+        # AI画像をマッピング
         for img in realistic_images:
             if not img.get("success"):
                 continue
@@ -176,7 +176,7 @@ def map_materials_to_sections(
             if score >= 0.4:
                 materials.append({
                     "type": "realistic",
-                    "type_label": "写真",
+                    "type_label": "AI画像",
                     "title": img.get("section", ""),
                     "image_path": f"images/realistic/{img.get('filename', '')}",
                     "image_data": img.get("image_data", ""),
@@ -323,7 +323,7 @@ def main():
     print(f"  YouTube: {len(youtube_videos)}件")
     print(f"  Web素材: {len(web_data)}件")
     print(f"  図解: {len([i for i in diagram_images if i.get('success')])}枚")
-    print(f"  リアル画像: {len([i for i in realistic_images if i.get('success')])}枚")
+    print(f"  AI画像: {len([i for i in realistic_images if i.get('success')])}枚")
     print(f"  セクション: {len(enriched_sections)}個 (素材マッピング: {total_materials}件)")
     print(f"{'='*60}")
 

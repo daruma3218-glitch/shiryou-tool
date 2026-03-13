@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gemini APIを使った画像生成スクリプト（図解 / リアル画像）"""
+"""Gemini APIを使った画像生成スクリプト（図解 / AI画像）"""
 
 import argparse
 import base64
@@ -119,7 +119,7 @@ def generate_single_image(
 def main():
     parser = argparse.ArgumentParser(description="Gemini画像生成ツール")
     parser.add_argument("--mode", choices=["diagrams", "realistic"], required=True,
-                        help="生成モード: diagrams=図解, realistic=リアル画像")
+                        help="生成モード: diagrams=図解, realistic=AI画像")
     parser.add_argument("--count", type=int, required=True,
                         help="生成する画像の枚数")
     parser.add_argument("--output-dir", required=True,

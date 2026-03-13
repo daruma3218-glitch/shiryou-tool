@@ -437,12 +437,12 @@ def generate_direction_data(
             diagram_items.append(f"  - 図{d.get('index', '?')}: {d.get('section', '')}（{d.get('prompt', '')[:40]}）")
         material_list_parts.append(f"【図解画像】{len(diagram_results)}枚\n" + "\n".join(diagram_items))
 
-    # リアル画像リスト
+    # AI画像リスト
     if realistic_results:
         realistic_items = []
         for r in realistic_results:
             realistic_items.append(f"  - 写真{r.get('index', '?')}: {r.get('section', '')}（{r.get('prompt', '')[:40]}）")
-        material_list_parts.append(f"【リアル画像】{len(realistic_results)}枚\n" + "\n".join(realistic_items))
+        material_list_parts.append(f"【AI画像】{len(realistic_results)}枚\n" + "\n".join(realistic_items))
 
     # YouTube動画リスト
     if youtube_results:
