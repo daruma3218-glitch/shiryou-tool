@@ -412,10 +412,10 @@ def generate_direction_data(
     analysis: dict,
     youtube_results: list,
     web_results: list,
-    diagram_count: int,
-    realistic_count: int,
+    diagram_results: list,
+    realistic_results: list,
 ) -> dict:
-    """演出エージェント: 原稿を分析して動画構成・演出プランを生成（プレーンテキストJSON）"""
+    """演出エージェント: 原稿と素材リストを分析して具体的な素材配置指示を含む演出プランを生成"""
     sections = analysis.get("sections", [])
     keywords = analysis.get("keywords", [])
     title = analysis.get("title", "動画素材集")
@@ -427,17 +427,52 @@ def generate_direction_data(
         ensure_ascii=False,
     )
 
+    # 素材リストを整理（Claudeに具体的な素材を参照させる）
+    material_list_parts = []
+
+    # 図解画像リスト
+    if diagram_results:
+        diagram_items = []
+        for d in diagram_results:
+            diagram_items.append(f"  - 図{d.get('index', '?')}: {d.get('section', '')}（{d.get('prompt', '')[:40]}）")
+        material_list_parts.append(f"【図解画像】{len(diagram_results)}枚\n" + "\n".join(diagram_items))
+
+    # リアル画像リスト
+    if realistic_results:
+        realistic_items = []
+        for r in realistic_results:
+            realistic_items.append(f"  - 写真{r.get('index', '?')}: {r.get('section', '')}（{r.get('prompt', '')[:40]}）")
+        material_list_parts.append(f"【リアル画像】{len(realistic_results)}枚\n" + "\n".join(realistic_items))
+
+    # YouTube動画リスト
+    if youtube_results:
+        yt_items = []
+        for i, v in enumerate(youtube_results[:15], 1):
+            yt_items.append(f"  - YT{i}: {v.get('title', '')}（{v.get('channel', '')}）")
+        material_list_parts.append(f"【YouTube動画】{len(youtube_results)}件\n" + "\n".join(yt_items))
+
+    # Web素材リスト
+    if web_results:
+        web_items = []
+        for i, w in enumerate(web_results[:20], 1):
+            web_items.append(f"  - Web{i}: {w.get('description', '')[:50]}（{w.get('section', '')}）")
+        material_list_parts.append(f"【Web素材】{len(web_results)}件\n" + "\n".join(web_items))
+
+    materials_text = "\n\n".join(material_list_parts)
+
     system = (
         "あなたはプロの動画ディレクター・演出家です。"
-        "原稿を分析して、動画制作の構成・演出プランを作成してください。"
+        "原稿と収集済み素材リストを分析して、動画編集者がすぐに作業できる具体的な演出プランを作成してください。"
         "結果はJSON形式のみで返してください。マークダウンやコードブロックは不要です。"
         "\n\n重要ルール:"
         "\n- 全ての値はプレーンテキスト（HTMLタグ禁止）"
         "\n- ダブルクォートの代わりに「」を使うこと"
         "\n- sectionsのtitleは指定されたセクション名をそのまま使うこと"
+        "\n- material_placementでは必ず素材番号（図1、写真3、YT2、Web5など）を使って具体的に指示すること"
     )
 
-    query = f"""以下の原稿から、30分動画の演出プランをJSON形式で作成してください。
+    query = f"""以下の原稿と素材リストから、30分動画の演出プランをJSON形式で作成してください。
+動画編集者が「どの素材をどのタイミングで使うか」すぐわかるよう、具体的に指示してください。
 
 原稿（冒頭2000文字）:
 {manuscript_text[:2000]}
@@ -445,7 +480,9 @@ def generate_direction_data(
 セクション構成（このtitleをそのまま使うこと）:
 {sections_list}
 
-素材数: YouTube {len(youtube_results)}件、Web素材 {len(web_results)}件、図解 {diagram_count}枚、リアル画像 {realistic_count}枚
+===== 収集済み素材一覧 =====
+{materials_text}
+=============================
 
 以下のJSON形式で返してください（コードブロック不要、プレーンテキストのみ）:
 {{
@@ -458,10 +495,16 @@ def generate_direction_data(
       "time_start": "00:00",
       "duration": "X分",
       "narration_summary": "このセクションのナレーション要約（100-200文字）",
-      "visual_direction": "映像で何を見せるか（具体的な画面構成の指示）",
+      "visual_direction": "映像全体の方針（具体的な画面構成の指示）",
+      "material_placement": [
+        "0:00〜 オープニング: 図1（税制の仕組み）を全画面表示しながらナレーション開始",
+        "0:30〜 写真3（宗教施設の外観）をバックに統計データをテロップ表示",
+        "1:00〜 YT2の映像を参考資料として右下にワイプ表示",
+        "1:30〜 Web5のグラフを画面中央に配置し、ポイントを矢印で強調"
+      ],
       "bgm": "BGMの雰囲気・テンポ・楽器の指示",
       "telop": "テロップ・字幕の演出指示",
-      "cut_notes": "カット割り・構図・トランジションの指示",
+      "cut_notes": "カット割り・構図の指示",
       "transition": "次セクションへの繋ぎ方"
     }}
   ]
@@ -470,7 +513,8 @@ def generate_direction_data(
 ルール:
 - sectionsは上記セクション構成と同じ数だけ作る（各セクション1つずつ）
 - 合計30分になるよう各セクションのdurationを割り振る
-- visual_directionには「ここで図解を映す」「リアル画像を背景に」など具体的に書く
+- material_placementが最重要: 素材番号（図1、写真3、YT2、Web5など）を使って「いつ・どこに・どう配置するか」を3〜6個の指示として書く
+- 各セクションで使える素材は上記リストから選ぶ。セクションに最も関連する素材を選択すること
 - 全ての値はプレーンテキスト。HTMLタグは絶対に使わないこと"""
 
     # レート制限対策
@@ -508,6 +552,7 @@ def generate_direction_data(
             "duration": f"{per_section}分",
             "narration_summary": "",
             "visual_direction": "",
+            "material_placement": [],
             "bgm": "",
             "telop": "",
             "cut_notes": "",

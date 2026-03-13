@@ -213,15 +213,15 @@ class MaterialPipeline:
         self.log("ai", "演出エージェント起動", "収集素材を統合して動画構成を設計")
         self.agent("direction", "running", "収集素材を分析して演出プランを作成中...")
 
-        # 画像生成結果のカウントを取得
+        # 画像生成結果を取得（素材配置指示のためマニフェストデータを渡す）
         d_manifest = load_json(self.output_dir / "images" / "diagrams" / "diagrams_manifest.json")
-        d_ok = len([r for r in d_manifest.get("results", []) if r.get("success")])
-        r_ok_count = len([r for r in r_manifest.get("results", []) if r.get("success")])
+        d_results = [r for r in d_manifest.get("results", []) if r.get("success")]
+        r_results = [r for r in r_manifest.get("results", []) if r.get("success")]
 
         direction_data = generate_direction_data(
             client, manuscript_text, analysis,
             youtube_results, web_results,
-            d_ok, r_ok_count,
+            d_results, r_results,
         )
 
         # data.jsonとして保存（build_html.pyが参照する）

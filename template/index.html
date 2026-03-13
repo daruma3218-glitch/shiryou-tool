@@ -187,6 +187,26 @@
             </div>
             {% endif %}
 
+            <!-- Material Placement -->
+            {% if section.material_placement %}
+            <div class="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 border border-amber-200 dark:border-amber-800">
+              <div class="flex items-center gap-1.5 mb-2">
+                <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <span class="text-xs font-semibold text-amber-600 dark:text-amber-400">素材配置タイムライン</span>
+              </div>
+              <div class="space-y-1.5">
+                {% for placement in section.material_placement %}
+                <div class="flex items-start gap-2">
+                  <span class="flex-shrink-0 w-1.5 h-1.5 mt-1.5 rounded-full bg-amber-400"></span>
+                  <p class="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{{ placement }}</p>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
             <!-- Direction Details Grid -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
               {% if section.bgm %}
