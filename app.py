@@ -144,7 +144,7 @@ def update_progress(job_id: str, phase: int, message: str, percent: int, status:
         progress_path.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def run_pipeline(job_id: str, manuscript_path: str):
+def run_pipeline(job_id: str, manuscript_path: str, image_instructions: str = ""):
     """パイプラインをバックグラウンドで実行"""
     try:
         from scripts.pipeline import MaterialPipeline
@@ -155,6 +155,7 @@ def run_pipeline(job_id: str, manuscript_path: str):
             progress_callback=lambda phase, msg, pct: update_progress(job_id, phase, msg, pct),
             log_callback=lambda cat, msg, detail="": add_log(job_id, cat, msg, detail),
             agent_callback=lambda aid, status, msg, count=0, total=0: update_agent(job_id, aid, status, msg, count, total),
+            image_instructions=image_instructions,
         )
         pipeline.run()
         update_progress(job_id, 4, "完了しました！", 100, "completed")
@@ -236,15 +237,22 @@ def start_job():
     job_dir = OUTPUT_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
+    # 画像指示を取得
+    image_instructions = request.form.get("image_instructions", "").strip()
+
     # 原稿を保存
     manuscript_path = job_dir / "manuscript.txt"
     manuscript_path.write_text(manuscript_text, encoding="utf-8")
+
+    # 画像指示を保存
+    if image_instructions:
+        (job_dir / "image_instructions.txt").write_text(image_instructions, encoding="utf-8")
 
     # 進捗初期化
     update_progress(job_id, 0, "セットアップ中...", 0)
 
     # バックグラウンドで実行
-    thread = threading.Thread(target=run_pipeline, args=(job_id, str(manuscript_path)), daemon=True)
+    thread = threading.Thread(target=run_pipeline, args=(job_id, str(manuscript_path), image_instructions), daemon=True)
     thread.start()
 
     return jsonify({"job_id": job_id, "redirect": f"/progress/{job_id}"})

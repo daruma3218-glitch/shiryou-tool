@@ -106,6 +106,18 @@
             <p class="text-right text-xs text-gray-400 mt-1.5"><span id="charCount">0</span> 文字</p>
           </div>
 
+          <!-- Image Instructions -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              画像の指示
+              <span class="text-xs text-gray-400 font-normal ml-1">（任意）</span>
+            </label>
+            <textarea id="imageInstructions" name="image_instructions" rows="4"
+                      class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y transition"
+                      placeholder="例: 教室のシーンを多めに入れてほしい / グラフは棒グラフ中心で / 暖色系の雰囲気にしてほしい / 人物のイラストは不要"></textarea>
+            <p class="text-xs text-gray-400 mt-1.5">AI画像・図解の生成時にこの指示が反映されます</p>
+          </div>
+
           <!-- Submit -->
           <button type="submit" id="submitBtn"
                   class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-sm transition-all shadow-sm">
@@ -138,7 +150,7 @@
                 <div class="mt-2 flex flex-wrap gap-1.5">
                   <span class="text-[10px] px-2 py-0.5 bg-red-50 text-red-700 rounded-full">YouTube</span>
                   <span class="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full">Web素材40件</span>
-                  <span class="text-[10px] px-2 py-0.5 bg-violet-50 text-violet-700 rounded-full">図解20枚</span>
+                  <span class="text-[10px] px-2 py-0.5 bg-violet-50 text-violet-700 rounded-full">図解30枚</span>
                 </div>
               </div>
             </div>
@@ -146,7 +158,7 @@
               <div class="flex-shrink-0 w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-xs font-bold">2</div>
               <div class="pt-1.5">
                 <div class="text-sm font-medium text-gray-900">追加画像生成</div>
-                <div class="text-xs text-gray-500 mt-0.5">AI画像30枚 (Gemini)</div>
+                <div class="text-xs text-gray-500 mt-0.5">AI画像20枚 (Gemini)</div>
               </div>
             </div>
             <div class="step-item relative flex gap-3">
@@ -174,7 +186,7 @@
               <div class="w-8 h-8 rounded-md bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">G</div>
               <div>
                 <div class="text-xs font-medium text-gray-900">Gemini</div>
-                <div class="text-[10px] text-gray-500">画像生成 (50枚)</div>
+                <div class="text-[10px] text-gray-500">画像生成 (50枚: 図解30+AI画像20)</div>
               </div>
             </div>
           </div>

@@ -313,23 +313,24 @@ def generate_image_prompts(
     mode: str,
     count: int,
     existing_materials_summary: str = "",
+    image_instructions: str = "",
 ) -> list:
     """画像生成用の英文プロンプトをClaudeで作成"""
     sections_str = "\n".join([f"- {s}" for s in sections[:15]])
 
     if mode == "diagrams":
         system = (
-            "あなたは情報デザインの専門家です。"
-            "動画で使う図解画像のプロンプトを作成してください。"
-            "図解内のテキスト・ラベル・タイトルは全て日本語で指定してください。"
+            "あなたは図解デザイナーです。"
+            "極めてシンプルな図解画像のプロンプトを作成してください。"
             "結果はJSON配列のみで返してください。"
         )
-        extra_info = ""
-        # Web検索で補足データを収集
-        if keywords:
-            research_system = "Webで情報を検索し、原稿を補足するデータや数値を収集してください。"
-            research_query = f"以下のキーワードに関する最新のデータ・統計・数値を調査してください: {', '.join(keywords[:5])}"
-            extra_info = claude_research(client, research_query, research_system, max_tokens=2000)
+
+        user_instruction_block = ""
+        if image_instructions:
+            user_instruction_block = f"""
+【ユーザーからの画像指示（最優先で従うこと）】
+{image_instructions}
+"""
 
         query = f"""以下の原稿から、動画で使う図解画像のプロンプトを{count}個作成してください。
 
@@ -338,24 +339,26 @@ def generate_image_prompts(
 
 セクション構成:
 {sections_str}
-
-補足データ:
-{extra_info[:1000] if extra_info else "なし"}
+{user_instruction_block}
+【最重要ルール: とにかくシンプルに】
+- 要素数は最大3〜4個まで。それ以上入れない
+- 色は白背景 + 1色（青 or グレー）のみ
+- テキストは短いキーワードだけ（文章は絶対NG）
+- 装飾・影・グラデーション・アイコン一切不要
+- 余白をたっぷり取る。詰め込まない
 
 条件:
-- プロンプトは英語で書くが、図解内に表示するテキスト・ラベル・数値・タイトルは必ず日本語で指定すること
-- 例: "A bar chart showing ... with Japanese labels: 売上高, 利益率, 前年比120%"
-- シンプルな図解（棒グラフ、円グラフ、フローチャート、比較図、タイムライン等）
-- 色は統一感を持って
-- 象徴的なデータは必ず図解にする
-- 16:9の横長レイアウト
+- プロンプトは英語で書くこと
+- ラベルや数値は日本語で指定（例: "A simple bar chart with 3 bars labeled: 項目A, 項目B, 項目C"）
+- 種類: 棒グラフ、円グラフ、矢印フロー、2列比較、数字の強調など
+- 16:9横長、大きな文字
+- 1枚につき伝える情報は1つだけ
 - 各プロンプトに対応するセクション名を記載
-- 重要: 各プロンプトは必ず異なる内容にすること。同じテーマでも視点・切り口・データを変える
-- 同じセクションから複数枚作る場合も、それぞれ別のデータや観点を扱うこと
+- {count}個すべて異なる内容にすること
 
 以下のJSON配列形式で返してください（JSONのみ返すこと）:
 [
-  {{"prompt": "英語プロンプト（日本語テキスト指定を含む）", "section": "セクション名"}}
+  {{"prompt": "英語プロンプト（日本語ラベル指定を含む）", "section": "セクション名"}}
 ]"""
     else:  # realistic
         system = (
@@ -363,6 +366,13 @@ def generate_image_prompts(
             "動画で使うリアルな画像のプロンプトを英語で作成してください。"
             "結果はJSON配列のみで返してください。"
         )
+        user_instruction_block = ""
+        if image_instructions:
+            user_instruction_block = f"""
+【ユーザーからの画像指示（最優先で従うこと）】
+{image_instructions}
+"""
+
         query = f"""以下の原稿から、動画で使うリアルな画像のプロンプトを{count}個作成してください。
 
 原稿（冒頭2000文字）:
@@ -373,7 +383,7 @@ def generate_image_prompts(
 
 既存素材の概要:
 {existing_materials_summary[:500]}
-
+{user_instruction_block}
 条件:
 - 英語のプロンプトにすること
 - 既存素材で足りない部分を補う画像

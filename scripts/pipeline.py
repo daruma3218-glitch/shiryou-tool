@@ -30,6 +30,7 @@ class MaterialPipeline:
         progress_callback: Optional[Callable] = None,
         log_callback: Optional[Callable] = None,
         agent_callback: Optional[Callable] = None,
+        image_instructions: str = "",
     ):
         self.manuscript_path = Path(manuscript_path)
         self.output_dir = Path(output_dir)
@@ -37,6 +38,7 @@ class MaterialPipeline:
         self.progress_callback = progress_callback or (lambda *a: None)
         self.log_callback = log_callback or (lambda *a, **kw: None)
         self.agent_callback = agent_callback or (lambda *a, **kw: None)
+        self.image_instructions = image_instructions
 
     def report(self, phase: int, message: str, percent: int):
         """進捗を報告"""
@@ -126,7 +128,8 @@ class MaterialPipeline:
             self.report(1, "[Agent 3] 図解プロンプト作成中...", 16)
             self.log("image", "図解画像のプロンプト作成を開始", "Claudeでプロンプト生成中")
             self.agent("diagrams", "running", "Claudeでプロンプトを作成中...")
-            prompts = generate_image_prompts(client, manuscript_text, keywords, sections, "diagrams", 20)
+            prompts = generate_image_prompts(client, manuscript_text, keywords, sections, "diagrams", 30,
+                                                image_instructions=self.image_instructions)
             prompts_path = self.output_dir / "diagram_prompts.json"
             save_json(prompts_path, {"prompts": prompts})
             self.log("image", f"図解プロンプト{len(prompts)}件作成完了")
@@ -135,7 +138,7 @@ class MaterialPipeline:
                 self.agent("diagrams", "running", f"Geminiで{len(prompts)}枚生成中...", count=0, total=len(prompts))
                 self.report(1, f"[Agent 3] 図解画像{len(prompts)}枚生成中...", 20)
                 self.log("image", f"Geminiで図解画像{len(prompts)}枚の生成を開始", "カラーパレット: 青/白/ダークグレー")
-                self._run_image_generation("diagrams", 20, prompts_path)
+                self._run_image_generation("diagrams", 30, prompts_path)  # 図解30枚
                 self.log("image", "図解画像の生成処理が完了")
 
             # 最終結果を確認
@@ -187,7 +190,8 @@ class MaterialPipeline:
 
         realistic_prompts = generate_image_prompts(
             client, manuscript_text, keywords, sections,
-            "realistic", 30, existing_summary
+            "realistic", 20, existing_summary,  # AI画像20枚
+            image_instructions=self.image_instructions,
         )
         realistic_prompts_path = self.output_dir / "realistic_prompts.json"
         save_json(realistic_prompts_path, {"prompts": realistic_prompts})
@@ -197,7 +201,7 @@ class MaterialPipeline:
             self.agent("realistic", "running", f"Geminiで{len(realistic_prompts)}枚生成中...", count=0, total=len(realistic_prompts))
             self.report(2, f"AI画像{len(realistic_prompts)}枚生成中...", 60)
             self.log("image", f"GeminiでAI画像{len(realistic_prompts)}枚の生成を開始", "フォトリアリスティック品質")
-            self._run_image_generation("realistic", 30, realistic_prompts_path)
+            self._run_image_generation("realistic", 20, realistic_prompts_path)  # AI画像20枚
             self.log("image", "AI画像の生成処理が完了")
 
         # 最終結果を確認
