@@ -130,7 +130,7 @@ def analyze_manuscript(client: anthropic.Anthropic, manuscript_text: str) -> dic
     )
     query = f"""以下の原稿を分析してください。
 
-{manuscript_text[:4000]}
+{manuscript_text[:15000]}
 
 以下のJSON形式で返してください（JSONのみ返すこと）:
 {{
@@ -334,8 +334,8 @@ def generate_image_prompts(
 
         query = f"""以下の原稿から、動画で使う図解画像のプロンプトを{count}個作成してください。
 
-原稿（冒頭2000文字）:
-{manuscript_text[:2000]}
+原稿:
+{manuscript_text[:10000]}
 
 セクション構成:
 {sections_str}
@@ -375,8 +375,8 @@ def generate_image_prompts(
 
         query = f"""以下の原稿から、動画で使うリアルな画像のプロンプトを{count}個作成してください。
 
-原稿（冒頭2000文字）:
-{manuscript_text[:2000]}
+原稿:
+{manuscript_text[:10000]}
 
 セクション構成:
 {sections_str}
@@ -484,8 +484,8 @@ def generate_direction_data(
     query = f"""以下の原稿と素材リストから、30分動画の演出プランをJSON形式で作成してください。
 動画編集者が「どの素材をどのタイミングで使うか」すぐわかるよう、具体的に指示してください。
 
-原稿（冒頭6000文字）:
-{manuscript_text[:6000]}
+原稿:
+{manuscript_text[:15000]}
 
 セクション構成（このtitleをそのまま使うこと）:
 {sections_list}
