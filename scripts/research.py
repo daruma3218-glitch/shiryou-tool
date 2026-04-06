@@ -332,7 +332,16 @@ def generate_image_prompts(
 {image_instructions}
 """
 
-        query = f"""以下の原稿から、動画で使う図解画像のプロンプトを{count}個作成してください。
+        query = f"""以下の原稿から、動画で使う図解画像のプロンプトを**必ず{count}個**作成してください。
+
+【重要】{count}個に足りない場合は、原稿の各段落・各トピックごとに図解を作ってください。
+1つのセクションにつき最低5〜6枚は必要です。以下のような図解を考えてください:
+- そのシーンで説明している概念の図解
+- 数値やデータの棒グラフ・円グラフ
+- 比較表（AとBの違い）
+- フロー図（手順や流れ）
+- キーワードや用語の強調表示
+- 関係図（矢印で繋ぐ）
 
 原稿:
 {manuscript_text[:10000]}
@@ -340,12 +349,12 @@ def generate_image_prompts(
 セクション構成:
 {sections_str}
 {user_instruction_block}
-【最重要ルール: とにかくシンプルに】
-- 要素数は最大3〜4個まで。それ以上入れない
+【デザインルール: シンプルに】
+- 要素数は最大3〜4個まで
 - 色は白背景 + 1色（青 or グレー）のみ
-- テキストは短いキーワードだけ（文章は絶対NG）
-- 装飾・影・グラデーション・アイコン一切不要
-- 余白をたっぷり取る。詰め込まない
+- テキストは短いキーワードだけ（文章NG）
+- 装飾・影・グラデーション不要
+- 余白をたっぷり取る
 
 条件:
 - プロンプトは英語で書くこと
@@ -354,9 +363,9 @@ def generate_image_prompts(
 - 16:9横長、大きな文字
 - 1枚につき伝える情報は1つだけ
 - 各プロンプトに対応するセクション名を記載
-- {count}個すべて異なる内容にすること
+- **必ず{count}個すべて異なる内容で出力すること。{count}個未満は不可。**
 
-以下のJSON配列形式で返してください（JSONのみ返すこと）:
+以下のJSON配列形式で返してください（JSONのみ、{count}個の要素を含むこと）:
 [
   {{"prompt": "英語プロンプト（日本語ラベル指定を含む）", "section": "セクション名"}}
 ]"""
@@ -399,7 +408,7 @@ def generate_image_prompts(
   {{"prompt": "英文プロンプト", "section": "セクション名"}}
 ]"""
 
-    result = claude_query(client, query, system, max_tokens=8000)
+    result = claude_query(client, query, system, max_tokens=12000)
     prompts = parse_json_array(result)
 
     # 重複排除: プロンプトテキストが類似しているものを除去
@@ -412,6 +421,40 @@ def generate_image_prompts(
         if key and key not in seen_prompts:
             seen_prompts.add(key)
             unique_prompts.append(p)
+
+    # 足りない場合は追加リクエスト
+    if len(unique_prompts) < count and mode == "diagrams":
+        remaining = count - len(unique_prompts)
+        existing_list = "\n".join([f"- {p.get('prompt', '')[:80]}" for p in unique_prompts])
+        supplement_query = f"""追加で{remaining}個の図解プロンプトを作成してください。
+
+以下は既に作成済みなので、これらとは異なる内容にしてください:
+{existing_list}
+
+原稿:
+{manuscript_text[:10000]}
+
+セクション構成:
+{sections_str}
+
+条件:
+- 原稿の中でまだ図解化されていない部分を図解にする
+- プロンプトは英語、ラベルは日本語
+- シンプルなデザイン（白背景+1色、要素3-4個まで）
+- 必ず{remaining}個出力すること
+
+JSON配列形式で返してください（JSONのみ）:
+[
+  {{"prompt": "英語プロンプト", "section": "セクション名"}}
+]"""
+        result2 = claude_query(client, supplement_query, system, max_tokens=8000)
+        extra = parse_json_array(result2)
+        for p in extra:
+            prompt_text = p.get("prompt", "").strip().lower()
+            key = prompt_text[:60]
+            if key and key not in seen_prompts:
+                seen_prompts.add(key)
+                unique_prompts.append(p)
 
     return unique_prompts[:count]
 
