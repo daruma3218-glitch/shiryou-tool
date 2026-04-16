@@ -320,8 +320,8 @@ def generate_image_prompts(
 
     if mode == "diagrams":
         system = (
-            "あなたは図解デザイナーです。"
-            "極めてシンプルな図解画像のプロンプトを作成してください。"
+            "あなたはビジュアル・ディレクターです。"
+            "動画原稿を視覚化するイラスト・図解・地図のプロンプトを作成します。"
             "結果はJSON配列のみで返してください。"
         )
 
@@ -332,43 +332,93 @@ def generate_image_prompts(
 {image_instructions}
 """
 
-        query = f"""以下の原稿から、動画で使う図解画像のプロンプトを**必ず{count}個**作成してください。
+        # --- Step 1: 原稿から視覚化ポイントを抽出 ---
+        extract_system = (
+            "あなたは動画演出家です。"
+            "原稿から視覚化すべき箇所を抽出してJSON配列で返します。"
+        )
+        extract_query = f"""以下の動画原稿から、視覚化するとよい部分の文章を**各段落・各文節から3か所ずつ**、
+バランスよく、**原稿の順番通りに**抜き出してください。
 
-【重要】{count}個に足りない場合は、原稿の各段落・各トピックごとに図解を作ってください。
-1つのセクションにつき最低5〜6枚は必要です。以下のような図解を考えてください:
-- そのシーンで説明している概念の図解
-- 数値やデータの棒グラフ・円グラフ
-- 比較表（AとBの違い）
-- フロー図（手順や流れ）
-- キーワードや用語の強調表示
-- 関係図（矢印で繋ぐ）
+目標: 合計 **{count}個** の視覚化ポイントを抽出してください。
+足りない場合は、細かい文節や事実・固有名詞・地名・数値・概念などからも広く拾ってください。
 
 原稿:
-{manuscript_text[:10000]}
+{manuscript_text[:15000]}
 
 セクション構成:
 {sections_str}
 {user_instruction_block}
-【デザインルール: シンプルに】
-- 要素数は最大3〜4個まで
-- 色は白背景 + 1色（青 or グレー）のみ
-- テキストは短いキーワードだけ（文章NG）
-- 装飾・影・グラデーション不要
-- 余白をたっぷり取る
-
-条件:
-- プロンプトは英語で書くこと
-- ラベルや数値は日本語で指定（例: "A simple bar chart with 3 bars labeled: 項目A, 項目B, 項目C"）
-- 種類: 棒グラフ、円グラフ、矢印フロー、2列比較、数字の強調など
-- 16:9横長、大きな文字
-- 1枚につき伝える情報は1つだけ
-- 各プロンプトに対応するセクション名を記載
-- **必ず{count}個すべて異なる内容で出力すること。{count}個未満は不可。**
-
-以下のJSON配列形式で返してください（JSONのみ、{count}個の要素を含むこと）:
+以下のJSON配列形式で返してください（JSONのみ、順番は原稿順）:
 [
-  {{"prompt": "英語プロンプト（日本語ラベル指定を含む）", "section": "セクション名"}}
+  {{"excerpt": "原稿からの抜粋（1〜2文）", "section": "対応セクション名", "type": "illustration | map | diagram | chart"}}
+]
+
+typeの選び方:
+- illustration: シーン・人物・物の描写（イラスト風）
+- map: 地名・場所・位置関係（航空写真風の地図）
+- diagram: 概念・仕組み・フロー
+- chart: 数値・データ・比較
+
+必ず{count}個返すこと。{count}個未満は不可。"""
+
+        extract_result = claude_query(client, extract_query, extract_system, max_tokens=12000)
+        excerpts = parse_json_array(extract_result)
+
+        # 足りなければ補充
+        if len(excerpts) < count:
+            remaining_ex = count - len(excerpts)
+            already = "\n".join([f"- {e.get('excerpt', '')[:60]}" for e in excerpts])
+            extract_query2 = f"""さらに{remaining_ex}個、視覚化ポイントを追加で抽出してください。
+
+既に抽出済み（これらは除く）:
+{already}
+
+原稿:
+{manuscript_text[:15000]}
+
+JSON配列のみで返してください:
+[
+  {{"excerpt": "原稿からの抜粋", "section": "セクション名", "type": "illustration | map | diagram | chart"}}
 ]"""
+            extract_result2 = claude_query(client, extract_query2, extract_system, max_tokens=8000)
+            extra_excerpts = parse_json_array(extract_result2)
+            excerpts.extend(extra_excerpts)
+
+        excerpts = excerpts[:count]
+
+        # --- Step 2: 各視覚化ポイントを画像プロンプト化 ---
+        excerpts_json = json.dumps(excerpts, ensure_ascii=False, indent=2)
+
+        query = f"""以下は動画原稿から抽出した{len(excerpts)}個の視覚化ポイントです。
+各項目に**厳密に対応する**イラスト・地図・図解の画像プロンプトを作成してください。
+
+視覚化ポイント:
+{excerpts_json}
+{user_instruction_block}
+【必須ルール】
+- **プロンプトは英語で書く**こと（画像生成モデル向け）
+- 画像内に入れる**文字は日本語のみ**（英語の文字は画像内に入れない）
+- **画像にタイトルは不要**（"no title text", "no heading" を明記）
+- **内容に応じてイラストのタッチを変える**（ミニマル、水彩風、フラット、線画、3D風、切り絵風、コミック風など）
+- **地図資料は航空写真風（aerial view / satellite style）**にする
+- 情報を詰め込みすぎず、**シンプルでわかりやすい**仕上がりにする
+- 色は**カラフルでOK**（色付き背景・パステル・ビビッドなど自由）
+- **16:9の横長**
+- 日本語ラベルや数値を入れる場合は具体的に指定（例: "with Japanese label: 東京"）
+
+【typeごとの指針】
+- illustration: 内容に合ったタッチのイラスト。人物・物・情景を描く
+- map: 航空写真風の地図（aerial photograph style map / satellite imagery style）。地名は日本語
+- diagram: シンプルな概念図・フロー図。矢印と少数のボックスで構成
+- chart: 棒グラフ・円グラフ・比較など。要素は3〜5個まで
+
+以下のJSON配列形式で返してください（JSONのみ、視覚化ポイントと同じ順番・同じ数）:
+[
+  {{"prompt": "英語プロンプト（スタイル指定・日本語ラベル指定を含む）", "section": "セクション名", "excerpt": "元の抜粋"}}
+]
+
+必ず{len(excerpts)}個出力すること。"""
     else:  # realistic
         system = (
             "あなたは映像プロデューサーです。"
@@ -426,21 +476,23 @@ def generate_image_prompts(
     if len(unique_prompts) < count and mode == "diagrams":
         remaining = count - len(unique_prompts)
         existing_list = "\n".join([f"- {p.get('prompt', '')[:80]}" for p in unique_prompts])
-        supplement_query = f"""追加で{remaining}個の図解プロンプトを作成してください。
+        supplement_query = f"""追加で{remaining}個のイラスト・地図・図解プロンプトを作成してください。
 
 以下は既に作成済みなので、これらとは異なる内容にしてください:
 {existing_list}
 
 原稿:
-{manuscript_text[:10000]}
+{manuscript_text[:15000]}
 
 セクション構成:
 {sections_str}
 
 条件:
-- 原稿の中でまだ図解化されていない部分を図解にする
-- プロンプトは英語、ラベルは日本語
-- シンプルなデザイン（白背景+1色、要素3-4個まで）
+- 原稿の中でまだ視覚化されていない部分をイラスト/地図/図解にする
+- プロンプトは英語、画像内の文字は日本語のみ、タイトルなし
+- 内容に応じてタッチを変える（ミニマル/水彩/フラット/線画/切り絵など）
+- 地図の場合は航空写真風
+- カラフルOK、16:9横長、シンプルで情報過多にしない
 - 必ず{remaining}個出力すること
 
 JSON配列形式で返してください（JSONのみ）:
