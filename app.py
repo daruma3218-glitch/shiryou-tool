@@ -314,6 +314,24 @@ def api_agents(job_id):
     return jsonify({})
 
 
+@app.route("/api/subsk-health")
+def api_subsk_health():
+    """サブスクLLMゲートウェイの状態確認 (2026-08-10)。真偽値のみ・秘密は返さない。
+
+    gateway_enabled = SUPABASE_URL/KEY が設定済みか (Render環境変数の反映確認)
+    worker_alive    = 社長PCのワーカーのハートビートが60秒以内か (転送路の生存確認)
+    """
+    try:
+        from scripts.subsk_gateway import _conf, _worker_alive
+        enabled = _conf() is not None
+        return jsonify({
+            "gateway_enabled": enabled,
+            "worker_alive": _worker_alive() if enabled else False,
+        })
+    except Exception as e:
+        return jsonify({"gateway_enabled": False, "error": type(e).__name__})
+
+
 @app.route("/results/<job_id>/")
 @app.route("/results/<job_id>/<path:filename>")
 @login_required

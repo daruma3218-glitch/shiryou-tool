@@ -18,8 +18,30 @@ def get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
+def _try_subsk_gateway(kind: str, query: str, system: str, max_tokens: int, max_uses: int = 0) -> "str | None":
+    """サブスクゲートウェイ (社長PCワーカー・API課金ゼロ) を試す。不在なら None。
+
+    2026-08-10 導入。SUPABASE_URL/SUPABASE_KEY 未設定なら常に None = 従来動作。
+    詳細は scripts/subsk_gateway.py のヘッダ参照。
+    """
+    try:
+        try:
+            from scripts.subsk_gateway import gateway_generate
+        except ImportError:
+            from subsk_gateway import gateway_generate  # 単体実行時
+        return gateway_generate(kind, system, query, max_tokens, max_uses)
+    except Exception:
+        return None
+
+
 def claude_research(client: anthropic.Anthropic, query: str, system: str, max_tokens: int = 4096, max_uses: int = 10) -> str:
     """Claude API + Web検索でリサーチを実行"""
+    # サブスク経路優先 (ワーカー経由・課金ゼロ)。CLI の WebSearch は実URLを本文中に
+    # 出典として含めるため、下流の URL 正規表現抽出 (research_web_data 等) はそのまま効く。
+    text = _try_subsk_gateway("research", query, system, max_tokens, max_uses)
+    if text is not None:
+        return text
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
@@ -85,6 +107,11 @@ def claude_research(client: anthropic.Anthropic, query: str, system: str, max_to
 
 def claude_query(client: anthropic.Anthropic, query: str, system: str, max_tokens: int = 4096) -> str:
     """Claude API（Web検索なし）でクエリを実行"""
+    # サブスク経路優先 (ワーカー経由・課金ゼロ)。不在なら従来の API 直呼び。
+    text = _try_subsk_gateway("query", query, system, max_tokens)
+    if text is not None:
+        return text
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
