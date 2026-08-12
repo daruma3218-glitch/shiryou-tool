@@ -46,8 +46,11 @@ def claude_research(client: anthropic.Anthropic, query: str, system: str, max_to
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=max_tokens,
+                model="claude-sonnet-5",
+                # Sonnet 5 は thinking 未指定だと思考が既定 ON。検索を使うか否かの判断は
+                # 思考ありの方が精度が高いためここは思考を残し、そのぶん本文が切り詰め
+                # られないよう max_tokens に思考分の余裕を上乗せする
+                max_tokens=max_tokens + 4096,
                 system=system,
                 tools=[{
                     "type": "web_search_20250305",
@@ -116,10 +119,13 @@ def claude_query(client: anthropic.Anthropic, query: str, system: str, max_token
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-sonnet-5",
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": query}],
+                # 検索なしの素の生成。出力が長い工程なので 4.6 と同じ「思考なし」に固定し、
+                # max_tokens を本文だけで使い切れるようにする
+                thinking={"type": "disabled"},
             )
 
             if not response or not response.content:

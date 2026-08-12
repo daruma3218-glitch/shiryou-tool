@@ -89,7 +89,7 @@ def gateway_generate(
     query: str,
     max_tokens: int,
     max_uses: int = 0,
-    model: str = "claude-sonnet-4-6",
+    model: str = "claude-sonnet-5",
     tool: str = "shiryou",
 ) -> str | None:
     """ワーカー経由 (サブスク枠) でテキスト生成。
