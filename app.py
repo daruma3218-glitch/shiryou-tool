@@ -212,8 +212,7 @@ def start_job():
     """ジョブを開始"""
     # APIキー確認
     missing = []
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        missing.append("ANTHROPIC_API_KEY")
+    pass  # Subscription CLI does not require an Anthropic API key.
     if not os.environ.get("GEMINI_API_KEY"):
         missing.append("GEMINI_API_KEY")
     if missing:

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Claude API（Web検索付き）を使ったリサーチ・分析・統合エージェント"""
 
+try:
+    from . import subscription_runtime as _subscription
+except ImportError:
+    import subscription_runtime as _subscription
+
+
 import json
 import os
 import sys
@@ -11,148 +17,19 @@ import anthropic
 
 
 def get_client() -> anthropic.Anthropic:
-    """Anthropicクライアントを取得"""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key or api_key == "your_api_key_here":
-        raise RuntimeError("ANTHROPIC_API_KEY が設定されていません。.env を確認してください。")
-    return anthropic.Anthropic(api_key=api_key)
+    return _subscription.SubscriptionClient(tool="shiryou")
 
 
 def _try_subsk_gateway(kind: str, query: str, system: str, max_tokens: int, max_uses: int = 0) -> "str | None":
-    """サブスクゲートウェイ (社長PCワーカー・API課金ゼロ) を試す。不在なら None。
-
-    2026-08-10 導入。SUPABASE_URL/SUPABASE_KEY 未設定なら常に None = 従来動作。
-    詳細は scripts/subsk_gateway.py のヘッダ参照。
-    """
-    try:
-        try:
-            from scripts.subsk_gateway import gateway_generate
-        except ImportError:
-            from subsk_gateway import gateway_generate  # 単体実行時
-        return gateway_generate(kind, system, query, max_tokens, max_uses)
-    except Exception:
-        return None
+    return _subscription.generate(system, query, tool='shiryou', use_search=(kind=="research"), timeout=1800, max_tokens=max_tokens)[0]
 
 
 def claude_research(client: anthropic.Anthropic, query: str, system: str, max_tokens: int = 4096, max_uses: int = 10) -> str:
-    """Claude API + Web検索でリサーチを実行"""
-    # サブスク経路優先 (ワーカー経由・課金ゼロ)。CLI の WebSearch は実URLを本文中に
-    # 出典として含めるため、下流の URL 正規表現抽出 (research_web_data 等) はそのまま効く。
-    text = _try_subsk_gateway("research", query, system, max_tokens, max_uses)
-    if text is not None:
-        return text
-
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = client.messages.create(
-                model="claude-sonnet-5",
-                # Sonnet 5 は thinking 未指定だと思考が既定 ON。検索を使うか否かの判断は
-                # 思考ありの方が精度が高いためここは思考を残し、そのぶん本文が切り詰め
-                # られないよう max_tokens に思考分の余裕を上乗せする
-                max_tokens=max_tokens + 4096,
-                system=system,
-                tools=[{
-                    "type": "web_search_20250305",
-                    "name": "web_search",
-                    "max_uses": max_uses,
-                }],
-                messages=[{"role": "user", "content": query}],
-            )
-
-            # テキストブロックと検索結果URLを両方抽出
-            text_parts = []
-            search_results = []
-            block_types_found = []
-            for block in response.content:
-                block_type = getattr(block, "type", "unknown")
-                block_types_found.append(block_type)
-                if hasattr(block, "text"):
-                    text_parts.append(block.text)
-                # web_search_tool_result から実際のURLを抽出
-                if block_type == "web_search_tool_result":
-                    content = getattr(block, "content", [])
-                    for result in content:
-                        result_type = getattr(result, "type", "")
-                        if result_type == "web_search_result":
-                            url = getattr(result, "url", "")
-                            title = getattr(result, "title", "")
-                            if url:
-                                search_results.append({"url": url, "title": title})
-
-            print(f"  [DEBUG] Block types: {block_types_found}")
-            print(f"  [DEBUG] Search results extracted: {len(search_results)}")
-
-            text = "\n".join(text_parts)
-
-            # 検索結果URLが見つかった場合、テキスト末尾に追記して
-            # Claudeが生成したテキスト内のURLより実際のURLを優先させる
-            if search_results:
-                urls_info = "\n\n--- 実際の検索結果URL ---\n"
-                for sr in search_results:
-                    urls_info += f"- {sr['title']}: {sr['url']}\n"
-                text += urls_info
-
-            return text
-
-        except anthropic.RateLimitError:
-            wait = 15 * (attempt + 1)
-            print(f"  [RATE LIMIT] Waiting {wait}s...")
-            time.sleep(wait)
-        except Exception as e:
-            print(f"  [ERROR] Claude API: {e}")
-            if attempt == max_retries - 1:
-                return ""
-            time.sleep(3)
-
-    return ""
+    return _try_subsk_gateway("research", query, system, max_tokens, max_uses)
 
 
 def claude_query(client: anthropic.Anthropic, query: str, system: str, max_tokens: int = 4096) -> str:
-    """Claude API（Web検索なし）でクエリを実行"""
-    # サブスク経路優先 (ワーカー経由・課金ゼロ)。不在なら従来の API 直呼び。
-    text = _try_subsk_gateway("query", query, system, max_tokens)
-    if text is not None:
-        return text
-
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = client.messages.create(
-                model="claude-sonnet-5",
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": query}],
-                # 検索なしの素の生成。出力が長い工程なので 4.6 と同じ「思考なし」に固定し、
-                # max_tokens を本文だけで使い切れるようにする
-                thinking={"type": "disabled"},
-            )
-
-            if not response or not response.content:
-                print(f"  [WARN] Attempt {attempt+1}/{max_retries}: Empty response", flush=True)
-                if attempt == max_retries - 1:
-                    return ""
-                time.sleep(3)
-                continue
-
-            text_parts = []
-            for block in response.content:
-                if hasattr(block, "text"):
-                    text_parts.append(block.text)
-
-            return "\n".join(text_parts)
-
-        except anthropic.RateLimitError:
-            wait = 15 * (attempt + 1)
-            print(f"  [RATE LIMIT] Waiting {wait}s...")
-            time.sleep(wait)
-        except Exception as e:
-            print(f"  [ERROR] Claude API: {e}")
-            if attempt == max_retries - 1:
-                return ""
-            time.sleep(3)
-
-    return ""
+    return _try_subsk_gateway("query", query, system, max_tokens)
 
 
 def analyze_manuscript(client: anthropic.Anthropic, manuscript_text: str) -> dict:
