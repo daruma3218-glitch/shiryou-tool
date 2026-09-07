@@ -323,11 +323,15 @@ def api_subsk_health():
     try:
         from scripts.subsk_gateway import _conf, _worker_alive
         from scripts import subscription_runtime
+        from scripts.research import EDITORIAL_MODEL, RESEARCH_MODEL
         enabled = _conf() is not None
         return jsonify({
             "gateway_enabled": enabled,
             "worker_alive": _worker_alive() if enabled else False,
             "routing_version": subscription_runtime.ROUTING_VERSION,
+            "editorial_models": {"collection": RESEARCH_MODEL, "integration": EDITORIAL_MODEL,
+                                 "material_review": EDITORIAL_MODEL},
+            "llm_billing": "subscription_cli_only", "llm_api_fallback": False,
         })
     except Exception as e:
         return jsonify({"gateway_enabled": False, "error": type(e).__name__})

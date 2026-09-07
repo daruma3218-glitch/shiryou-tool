@@ -17,6 +17,7 @@ from scripts.research import (
     generate_image_prompts,
     generate_direction_data,
 )
+from scripts.material_review import review_materials
 
 
 class MaterialPipeline:
@@ -227,6 +228,13 @@ class MaterialPipeline:
             youtube_results, web_results,
             d_results, r_results,
         )
+
+        self.report(3, "ASTRAで資料の根拠・矛盾・不足を検査中...", 85)
+        content_review = review_materials(manuscript_text, web_results, job_id=self.output_dir.name)
+        direction_data["content_review"] = content_review
+        save_json(self.output_dir / "content_review.json", content_review)
+        review_label = {"pass": "合格", "needs_fix": "要修正", "unverified": "未確認"}[content_review["status"]]
+        self.log("ai", f"資料の内容検査: {review_label}", content_review.get("summary", ""))
 
         # data.jsonとして保存（build_html.pyが参照する）
         save_json(self.output_dir / "data.json", direction_data)

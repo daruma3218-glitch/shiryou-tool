@@ -517,6 +517,7 @@ def main():
     job_id = output_dir.name
 
     html = template.render(
+        content_review=data.get("content_review"),
         title=title,
         job_id=job_id,
         generated_date=datetime.now().strftime("%Y年%m月%d日 %H:%M"),

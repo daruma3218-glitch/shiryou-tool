@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude API（Web検索付き）を使ったリサーチ・分析・統合エージェント"""
+"""収集はClaude CLI、内容判断・資料統合はASTRA CLI。従量LLM APIは使わない。"""
 
 try:
     from . import subscription_runtime as _subscription
@@ -15,13 +15,20 @@ from pathlib import Path
 
 import anthropic
 
+EDITORIAL_MODEL = os.environ.get("SHIRYOU_EDITORIAL_MODEL", "").strip() or "gpt-6-astra"
+RESEARCH_MODEL = os.environ.get("SHIRYOU_RESEARCH_MODEL", "").strip() or "sonnet"
+
 
 def get_client() -> anthropic.Anthropic:
     return _subscription.SubscriptionClient(tool="shiryou")
 
 
-def _try_subsk_gateway(kind: str, query: str, system: str, max_tokens: int, max_uses: int = 0) -> "str | None":
-    return _subscription.generate(system, query, tool='shiryou', use_search=(kind=="research"), timeout=1800, max_tokens=max_tokens)[0]
+def _try_subsk_gateway(kind: str, query: str, system: str, max_tokens: int, max_uses: int = 0) -> str:
+    collecting = kind == "research"
+    return _subscription.generate(system, query, tool='shiryou', use_search=collecting,
+        model=RESEARCH_MODEL if collecting else EDITORIAL_MODEL,
+        workload="" if collecting else "material_synthesis", effort="high",
+        timeout=1800, max_tokens=max_tokens)[0]
 
 
 def claude_research(client: anthropic.Anthropic, query: str, system: str, max_tokens: int = 4096, max_uses: int = 10) -> str:
@@ -191,20 +198,9 @@ def research_web_data(client: anthropic.Anthropic, keywords: list, manuscript_su
 
         result = claude_research(client, query, system, max_tokens=8000)
 
-        # 検索結果テキストから実URLを抽出
-        real_urls = re.findall(r'https?://[^\s\'"<>\]）」]+', result)
-        real_urls_set = set(u.rstrip(".,;:)」") for u in real_urls)
-
         batch_results = parse_json_array(result)
-
-        # JSON内のURLを検証・修正
-        for item in batch_results:
-            url = item.get("url", "")
-            if url and url not in real_urls_set:
-                # URLがハルシネーションの可能性 - 検索結果の実URLで置き換え
-                matched = [u for u in real_urls_set if u.startswith("http") and "youtube.com" not in u]
-                if matched:
-                    item["url"] = matched[len(all_results) % len(matched)]
+        # 応答内にURLがあるだけでは実在や主張との対応を確認したことにならない。
+        # 無関係なURLへの自動置換をせず、後段の内容検査で根拠を確認する。
 
         for i, item in enumerate(batch_results):
             item["index"] = len(all_results) + i + 1
