@@ -48,7 +48,7 @@ def build_prompt(user_prompt: str, mode: str) -> str:
     return prefix + user_prompt
 
 
-IMAGE_MODEL = "gemini-3.1-flash-image-preview"
+IMAGE_MODEL = "gemini-nano-banana-2.1"  # 2026-10-07 社長指示: Nano Banana 2.1（最新）
 
 
 def generate_single_image(
